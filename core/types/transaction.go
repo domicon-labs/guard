@@ -59,6 +59,7 @@ type Transaction struct {
 	from atomic.Value
 
 	TxExtra *TxExtra
+	Receipt *Receipt
 }
 
 // NewTx creates a new transaction.

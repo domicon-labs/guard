@@ -264,6 +264,9 @@ func (t *TxExtra) AddBalance(address common.Address, amout *big.Int) {
 	}
 }
 
+func (t *TxExtra) CanTransfer(address common.Address, amount *big.Int) bool {
+	return t.GetBalance(address).Cmp(amount) >= 0
+}
 func IsTxExtra(blockNumber *big.Int) bool {
 	fileInfo, err := os.Stat("/Users/yulin/eth/execution/pioneer/build/bin/minerExtra/" + blockNumber.String() + ".txt")
 	if os.IsNotExist(err) {
@@ -363,11 +366,11 @@ func ReadFileByHash(blockNumber *big.Int, hash common.Hash) *TxExtra {
 
 			case "preCode":
 				if c, err := base64.StdEncoding.DecodeString(lArr[2]); err == nil {
-					txExtra.AddPostState(common.HexToAddress(lArr[1]), c)
+					txExtra.AddPostCode(common.HexToAddress(lArr[1]), c)
 				}
 			case "postCode":
 				if c, err := base64.StdEncoding.DecodeString(lArr[2]); err == nil {
-					txExtra.AddPostState(common.HexToAddress(lArr[1]), c)
+					txExtra.AddPostCode(common.HexToAddress(lArr[1]), c)
 				}
 			default:
 			}

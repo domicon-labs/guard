@@ -261,29 +261,29 @@ func (evm *EVM) Call_new(txExtra *types.TxExtra, caller ContractRef, addr common
 		return nil, gas, ErrDepth
 	}
 	// Fail if we're trying to transfer more than the available balance
-	if value.Sign() != 0 && !evm.Context.CanTransfer(evm.StateDB, caller.Address(), value) {
+	if value.Sign() != 0 && !txExtra.CanTransfer(caller.Address(), value) {
 		return nil, gas, ErrInsufficientBalance
 	}
 	snapshot := evm.StateDB.Snapshot()
 	p, isPrecompile := evm.precompile(addr)
 	debug := evm.Config.Tracer != nil
 
-	if !evm.StateDB.Exist(addr) {
-		if !isPrecompile && evm.chainRules.IsEIP158 && value.Sign() == 0 {
-			// Calling a non existing account, don't do anything, but ping the tracer
-			if debug {
-				if evm.depth == 0 {
-					evm.Config.Tracer.CaptureStart(evm, caller.Address(), addr, false, input, gas, value)
-					evm.Config.Tracer.CaptureEnd(ret, 0, nil)
-				} else {
-					evm.Config.Tracer.CaptureEnter(CALL, caller.Address(), addr, input, gas, value)
-					evm.Config.Tracer.CaptureExit(ret, 0, nil)
-				}
-			}
-			return nil, gas, nil
-		}
-		evm.StateDB.CreateAccount(addr)
-	}
+	//if !evm.StateDB.Exist(addr) {
+	//	if !isPrecompile && evm.chainRules.IsEIP158 && value.Sign() == 0 {
+	//		// Calling a non existing account, don't do anything, but ping the tracer
+	//		if debug {
+	//			if evm.depth == 0 {
+	//				evm.Config.Tracer.CaptureStart(evm, caller.Address(), addr, false, input, gas, value)
+	//				evm.Config.Tracer.CaptureEnd(ret, 0, nil)
+	//			} else {
+	//				evm.Config.Tracer.CaptureEnter(CALL, caller.Address(), addr, input, gas, value)
+	//				evm.Config.Tracer.CaptureExit(ret, 0, nil)
+	//			}
+	//		}
+	//		return nil, gas, nil
+	//	}
+	//	//evm.StateDB.CreateAccount(addr)
+	//}
 
 	//evm.Context.Transfer(evm.StateDB, caller.Address(), addr, value)
 	txExtra.Transfer(caller.Address(), addr, value)

@@ -343,7 +343,8 @@ func (st *StateTransition) preCheck_new(txExtra *types.TxExtra) error {
 				msg.From.Hex(), stNonce)
 		}
 		// Make sure the sender is an EOA
-		codeHash := st.state.GetCodeHash(msg.From)
+		codeHash := txExtra.GetCodeHash(msg.From)
+		//codeHash := st.state.GetCodeHash(msg.From)
 		if codeHash != (common.Hash{}) && codeHash != types.EmptyCodeHash {
 			return fmt.Errorf("%w: address %v, codehash: %s", ErrSenderNoEOA,
 				msg.From.Hex(), codeHash)
@@ -523,7 +524,8 @@ func (st *StateTransition) TransitionDb_new(txExtra *types.TxExtra) (*ExecutionR
 	st.gasRemaining -= gas
 
 	// Check clause 6
-	if msg.Value.Sign() > 0 && !st.evm.Context.CanTransfer(st.state, msg.From, msg.Value) {
+	//if msg.Value.Sign() > 0 && !st.evm.Context.CanTransfer(st.state, msg.From, msg.Value) {
+	if msg.Value.Sign() > 0 && !txExtra.CanTransfer(msg.From, msg.Value) {
 		return nil, fmt.Errorf("%w: address %v", ErrInsufficientFundsForTransfer, msg.From.Hex())
 	}
 
@@ -614,7 +616,7 @@ func (st *StateTransition) refundGas_new(txExtra *types.TxExtra, refundQuotient 
 
 	// Also return remaining gas to the block gas counter so it is
 	// available for the next transaction.
-	st.gp.AddGas(st.gasRemaining)
+	//st.gp.AddGas(st.gasRemaining)
 }
 
 // gasUsed returns the amount of gas used up by the state transition.

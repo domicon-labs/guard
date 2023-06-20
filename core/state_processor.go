@@ -20,12 +20,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/ethereum/go-ethereum/trie"
-	"math/big"
-	"sync"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/misc"
@@ -33,7 +27,13 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/ethereum/go-ethereum/trie"
+	"math/big"
+	"sync"
+	"sync/atomic"
 )
 
 // StateProcessor is a basic Processor, which takes care of transitioning
@@ -226,7 +226,6 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 							for address, code := range txExtra.PostCode {
 								codeHash := txExtra.GetPostCodeHashByAddress(address)
 								if bytes.Equal(codeHash, types.EmptyCodeHash.Bytes()) {
-									wg.Done()
 									continue
 								}
 								if crypto.Keccak256Hash(code) != common.BytesToHash(codeHash) {
@@ -242,13 +241,12 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 							receipt, err := applyTransaction_new(txExtra, msg, p.config, gp, statedb, blockNumber, blockHash, tx, usedGas, vmenv)
 							if err != nil {
 								log.Error("applyTransaction_new", "blockNumber", blockNumber, "hash", tx.Hash().Hex(), "err", err)
+								wg.Done()
 								continue
 							}
-							receipts = append(receipts, receipt)
-							allLogs = append(allLogs, receipt.Logs...)
-							log.Info("Process", "hash", tx.Hash().Hex(), "receipts", receipt)
+							tx.Receipt = receipt
+							wg.Done()
 						}
-						wg.Done()
 
 					case <-interruptCh:
 						// If block precaching was interrupted, abort
@@ -325,6 +323,16 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 						statedb.SetState(address, hash, c)
 					}
 				}
+				for address, i := range txExtra.PostCode {
+					enc := txExtra.PostState[address]
+					data := new(types.StateAccount)
+					if err := rlp.DecodeBytes(enc, data); err != nil {
+						log.Error("State_processor Failed to decode state object", "addr", address, "err", err)
+						//statedb.CreateAccount(address)
+						continue
+					}
+					statedb.SetCode(address, i)
+				}
 				//for address, _ := range txExtra.PostState {
 				//	nonce := statedb.GetNonce(address)
 				//	balance := statedb.GetBalance(address)
@@ -337,8 +345,21 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 				//		"txExtraRoot", txExtra.PostStateRoot.Hex())
 				//}
 			}
+			if transaction.Receipt != nil {
+				receipts = append(receipts, transaction.Receipt)
+				allLogs = append(allLogs, transaction.Receipt.Logs...)
+			}
 		}
 	}
+
+	//
+	pUseGas := new(uint64)
+	for _, receipt := range receipts {
+		*pUseGas += receipt.GasUsed
+		receipt.CumulativeGasUsed = *pUseGas
+		log.Info("receipts", "receipt", receipt)
+	}
+
 	// Fail if Shanghai not enabled and len(withdrawals) is non-zero.
 	withdrawals := block.Withdrawals()
 	if len(withdrawals) > 0 && !p.config.IsShanghai(block.Number(), block.Time()) {
@@ -346,7 +367,10 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	}
 	// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
 	p.engine.Finalize(p.bc, header, statedb, block.Transactions(), block.Uncles(), withdrawals)
-
+	if blockNumber.Uint64() == 48643 {
+		root2 := statedb.IntermediateRoot_new(p.bc.chainConfig.IsEIP158(block.Number()))
+		log.Info("查看Trie更改", "block", blockNumber, "header.root", block.Header().Root.Hex(), "root", root2.Hex())
+	}
 	root2 := statedb.IntermediateRoot(p.bc.chainConfig.IsEIP158(block.Number()))
 	log.Info("最终性比对", "block", blockNumber, "header.root", block.Header().Root.Hex(), "root", root2.Hex())
 	return receipts, allLogs, *usedGas, nil
@@ -415,8 +439,8 @@ func applyTransaction_new(txExtra *types.TxExtra, msg *Message, config *params.C
 		//root = statedb.IntermediateRoot(config.IsEIP158(blockNumber)).Bytes()
 		root = txExtra.PostStateRoot.Bytes()
 	}
-	*usedGas += result.UsedGas
-
+	atomic.AddUint64(usedGas, result.UsedGas)
+	//*usedGas += result.UsedGas
 	// Create a new receipt for the transaction, storing the intermediate root and gas used
 	// by the tx.
 	receipt := &types.Receipt{Type: tx.Type(), PostState: root, CumulativeGasUsed: *usedGas}
