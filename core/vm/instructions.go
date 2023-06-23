@@ -20,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 )
@@ -855,15 +856,30 @@ func opSelfdestruct(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext
 	if interpreter.readOnly {
 		return nil, ErrWriteProtection
 	}
-	beneficiary := scope.Stack.pop()
-	balance := interpreter.evm.StateDB.GetBalance(scope.Contract.Address())
-	interpreter.evm.StateDB.AddBalance(beneficiary.Bytes20(), balance)
-	interpreter.evm.StateDB.Suicide(scope.Contract.Address())
-	if tracer := interpreter.evm.Config.Tracer; tracer != nil {
-		tracer.CaptureEnter(SELFDESTRUCT, scope.Contract.Address(), beneficiary.Bytes20(), []byte{}, 0, balance)
-		tracer.CaptureExit([]byte{}, 0, nil)
+	if txExtra == nil {
+
+		beneficiary := scope.Stack.pop()
+		balance := interpreter.evm.StateDB.GetBalance(scope.Contract.Address())
+		interpreter.evm.StateDB.AddBalance(beneficiary.Bytes20(), balance)
+		interpreter.evm.StateDB.Suicide(scope.Contract.Address())
+		if tracer := interpreter.evm.Config.Tracer; tracer != nil {
+			tracer.CaptureEnter(SELFDESTRUCT, scope.Contract.Address(), beneficiary.Bytes20(), []byte{}, 0, balance)
+			tracer.CaptureExit([]byte{}, 0, nil)
+		}
+		return nil, errStopToken
+	} else {
+		beneficiary := scope.Stack.pop()
+		balance := txExtra.GetBalance(scope.Contract.Address())
+		txExtra.AddBalance(beneficiary.Bytes20(), balance)
+		txExtra.Suicide(scope.Contract.Address())
+
+		log.Info("opSelfdestruct", "addr", scope.Contract.Address().Hex())
+		if tracer := interpreter.evm.Config.Tracer; tracer != nil {
+			tracer.CaptureEnter(SELFDESTRUCT, scope.Contract.Address(), beneficiary.Bytes20(), []byte{}, 0, balance)
+			tracer.CaptureExit([]byte{}, 0, nil)
+		}
+		return nil, errStopToken
 	}
-	return nil, errStopToken
 }
 
 // following functions are used by the instruction jump  table

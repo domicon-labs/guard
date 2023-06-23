@@ -33,7 +33,6 @@ import (
 	"github.com/ethereum/go-ethereum/trie"
 	"math/big"
 	"sync"
-	"sync/atomic"
 )
 
 // StateProcessor is a basic Processor, which takes care of transitioning
@@ -70,7 +69,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		blockHash   = block.Hash()
 		blockNumber = block.Number()
 		allLogs     []*types.Log
-		gp          = new(GasPool).AddGas(block.GasLimit())
+		gp          = new(GasPool).AddGas(block.GasLimit() * 100)
 	)
 	// Mutate the block and state according to any hard-fork specs
 	if p.config.DAOForkSupport && p.config.DAOForkBlock != nil && p.config.DAOForkBlock.Cmp(block.Number()) == 0 {
@@ -276,6 +275,9 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 				for address, enc := range txExtra.PostState {
 					data := new(types.StateAccount)
 					if err := rlp.DecodeBytes(enc, data); err != nil {
+						if txExtra.MSuicide[address] == true {
+							statedb.Suicide(address)
+						}
 						log.Error("State_processor Failed to decode state object", "addr", address, "err", err)
 						//statedb.CreateAccount(address)
 
@@ -428,6 +430,7 @@ func applyTransaction_new(txExtra *types.TxExtra, msg *Message, config *params.C
 
 	// Apply the transaction to the current state (included in the env).
 	result, err := ApplyMessage_new(txExtra, evm, msg, gp)
+	log.Info("appRes", "result", result, "refund", txExtra.GetRefund())
 	if err != nil {
 		return nil, err
 	}
@@ -439,8 +442,8 @@ func applyTransaction_new(txExtra *types.TxExtra, msg *Message, config *params.C
 		//root = statedb.IntermediateRoot(config.IsEIP158(blockNumber)).Bytes()
 		root = txExtra.PostStateRoot.Bytes()
 	}
-	atomic.AddUint64(usedGas, result.UsedGas)
-	//*usedGas += result.UsedGas
+	//atomic.AddUint64(usedGas, result.UsedGas)
+	*usedGas += result.UsedGas
 	// Create a new receipt for the transaction, storing the intermediate root and gas used
 	// by the tx.
 	receipt := &types.Receipt{Type: tx.Type(), PostState: root, CumulativeGasUsed: *usedGas}

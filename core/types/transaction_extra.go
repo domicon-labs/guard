@@ -39,6 +39,9 @@ type TxExtra struct {
 
 	PreCode  map[common.Address][]byte
 	PostCode map[common.Address][]byte
+
+	Refund   uint64
+	MSuicide map[common.Address]bool
 }
 
 func NewTxExtra(hash common.Hash) *TxExtra {
@@ -56,7 +59,149 @@ func NewTxExtra(hash common.Hash) *TxExtra {
 		PostStorageProof: map[common.Address]map[common.Hash][][]byte{},
 		PreCode:          map[common.Address][]byte{},
 		PostCode:         map[common.Address][]byte{},
+		Refund:           0,
+		MSuicide:         map[common.Address]bool{},
 	}
+}
+
+func (t *TxExtra) Copy() *TxExtra {
+	cpy := &TxExtra{
+		TxHash:           t.TxHash,
+		PreStateRoot:     t.PreStateRoot,
+		PostStateRoot:    t.PostStateRoot,
+		PreState:         make(map[common.Address]*StateAccount),
+		PostState:        make(map[common.Address][]byte),
+		PreStorage:       make(map[common.Address]map[common.Hash]common.Hash),
+		PostStorage:      make(map[common.Address]map[common.Hash]common.Hash),
+		PreStateProof:    make(map[common.Address][][]byte),
+		PostStateProof:   make(map[common.Address][][]byte),
+		PreStorageProof:  make(map[common.Address]map[common.Hash][][]byte),
+		PostStorageProof: make(map[common.Address]map[common.Hash][][]byte),
+		PreCode:          make(map[common.Address][]byte),
+		PostCode:         make(map[common.Address][]byte),
+		Refund:           t.Refund,
+	}
+	for address, account := range t.PreState {
+		cpy.PreState[address] = &StateAccount{
+			Nonce:    account.Nonce,
+			Balance:  account.Balance,
+			Root:     account.Root,
+			CodeHash: account.CodeHash,
+		}
+	}
+	for address, bytes := range t.PostState {
+		cpy.PostState[address] = bytes
+	}
+	for address, m := range t.PreStorage {
+		cpy.PreStorage[address] = make(map[common.Hash]common.Hash)
+		for hash, c := range m {
+			cpy.PreStorage[address][hash] = c
+		}
+	}
+
+	for address, m := range t.PostStorage {
+		cpy.PostStorage[address] = make(map[common.Hash]common.Hash)
+		for hash, c := range m {
+			cpy.PostStorage[address][hash] = c
+		}
+	}
+
+	for address, i := range t.PreStateProof {
+		cpy.PreStateProof[address] = i
+	}
+	for address, i := range t.PostStateProof {
+		cpy.PostStateProof[address] = i
+	}
+
+	for address, m := range t.PreStorageProof {
+		cpy.PreStorageProof[address] = make(map[common.Hash][][]byte)
+		for hash, i := range m {
+			cpy.PreStorageProof[address][hash] = i
+		}
+	}
+
+	for address, m := range t.PostStorageProof {
+		cpy.PostStorageProof[address] = make(map[common.Hash][][]byte)
+		for hash, i := range m {
+			cpy.PostStorageProof[address][hash] = i
+		}
+	}
+
+	for address, bytes := range t.PreCode {
+		cpy.PreCode[address] = bytes
+	}
+
+	for address, bytes := range t.PostCode {
+		cpy.PostCode[address] = bytes
+	}
+
+	for address, b := range t.MSuicide {
+		cpy.MSuicide[address] = b
+	}
+
+	return cpy
+}
+
+func (t *TxExtra) Revert(snap *TxExtra) {
+	for address, account := range snap.PreState {
+		t.PreState[address] = &StateAccount{
+			Nonce:    account.Nonce,
+			Balance:  account.Balance,
+			Root:     account.Root,
+			CodeHash: account.CodeHash,
+		}
+	}
+	for address, bytes := range snap.PostState {
+		t.PostState[address] = bytes
+	}
+	for address, m := range snap.PreStorage {
+		t.PreStorage[address] = make(map[common.Hash]common.Hash)
+		for hash, c := range m {
+			t.PreStorage[address][hash] = c
+		}
+	}
+
+	for address, m := range snap.PostStorage {
+		t.PostStorage[address] = make(map[common.Hash]common.Hash)
+		for hash, c := range m {
+			t.PostStorage[address][hash] = c
+		}
+	}
+
+	for address, i := range snap.PreStateProof {
+		t.PreStateProof[address] = i
+	}
+	for address, i := range snap.PostStateProof {
+		t.PostStateProof[address] = i
+	}
+
+	for address, m := range snap.PreStorageProof {
+		t.PreStorageProof[address] = make(map[common.Hash][][]byte)
+		for hash, i := range m {
+			t.PreStorageProof[address][hash] = i
+		}
+	}
+
+	for address, m := range snap.PostStorageProof {
+		t.PostStorageProof[address] = make(map[common.Hash][][]byte)
+		for hash, i := range m {
+			t.PostStorageProof[address][hash] = i
+		}
+	}
+
+	for address, bytes := range snap.PreCode {
+		t.PreCode[address] = bytes
+	}
+
+	for address, bytes := range snap.PostCode {
+		t.PostCode[address] = bytes
+	}
+
+	for address, b := range snap.MSuicide {
+		t.MSuicide[address] = b
+	}
+
+	t.Refund = snap.Refund
 }
 
 func (t *TxExtra) AddPreState(address common.Address, stateAccount *StateAccount) {
@@ -181,11 +326,34 @@ func (t *TxExtra) GetPostCodeHashByAddress(address common.Address) []byte {
 	return data.CodeHash
 }
 
+func (t *TxExtra) Suicide(address common.Address) bool {
+	t.MSuicide[address] = true
+	return true
+}
+
+func (t *TxExtra) HasSuicided(address common.Address) bool {
+	return t.MSuicide[address]
+}
+
 func (t *TxExtra) GetNonce(address common.Address) uint64 {
 	if t.PreState[address] != nil {
 		return t.PreState[address].Nonce
 	}
 	return 0
+}
+
+func (t *TxExtra) AddRefund(gas uint64) {
+	t.Refund += gas
+}
+func (t *TxExtra) SubRefund(gas uint64) {
+	t.Refund -= gas
+}
+
+func (t *TxExtra) GetRefund() uint64 {
+	return t.Refund
+}
+func (t *TxExtra) SetRefund(gas uint64) {
+	t.Refund = gas
 }
 
 func (t *TxExtra) SetNonce(address common.Address, nonce uint64) {
@@ -366,7 +534,7 @@ func ReadFileByHash(blockNumber *big.Int, hash common.Hash) *TxExtra {
 
 			case "preCode":
 				if c, err := base64.StdEncoding.DecodeString(lArr[2]); err == nil {
-					txExtra.AddPostCode(common.HexToAddress(lArr[1]), c)
+					txExtra.AddPreCode(common.HexToAddress(lArr[1]), c)
 				}
 			case "postCode":
 				if c, err := base64.StdEncoding.DecodeString(lArr[2]); err == nil {

@@ -264,10 +264,10 @@ func (evm *EVM) Call_new(txExtra *types.TxExtra, caller ContractRef, addr common
 	if value.Sign() != 0 && !txExtra.CanTransfer(caller.Address(), value) {
 		return nil, gas, ErrInsufficientBalance
 	}
-	snapshot := evm.StateDB.Snapshot()
+	//snapshot := evm.StateDB.Snapshot()
+	snap := txExtra.Copy()
 	p, isPrecompile := evm.precompile(addr)
 	debug := evm.Config.Tracer != nil
-
 	//if !evm.StateDB.Exist(addr) {
 	//	if !isPrecompile && evm.chainRules.IsEIP158 && value.Sign() == 0 {
 	//		// Calling a non existing account, don't do anything, but ping the tracer
@@ -287,7 +287,6 @@ func (evm *EVM) Call_new(txExtra *types.TxExtra, caller ContractRef, addr common
 
 	//evm.Context.Transfer(evm.StateDB, caller.Address(), addr, value)
 	txExtra.Transfer(caller.Address(), addr, value)
-
 	// Capture the tracer start/end events in debug mode
 	if debug {
 		if evm.depth == 0 {
@@ -303,7 +302,6 @@ func (evm *EVM) Call_new(txExtra *types.TxExtra, caller ContractRef, addr common
 			}(gas)
 		}
 	}
-
 	if isPrecompile {
 		ret, gas, err = RunPrecompiledContract(p, input, gas)
 	} else {
@@ -328,7 +326,9 @@ func (evm *EVM) Call_new(txExtra *types.TxExtra, caller ContractRef, addr common
 	// above we revert to the snapshot and consume any gas remaining. Additionally
 	// when we're in homestead this also counts for code storage gas errors.
 	if err != nil {
-		evm.StateDB.RevertToSnapshot(snapshot)
+		//evm.StateDB.RevertToSnapshot(snapshot)
+		//txExtra.SetRefund(snap.GetRefund())
+		txExtra.Revert(snap)
 		if err != ErrExecutionReverted {
 			gas = 0
 		}
@@ -336,6 +336,7 @@ func (evm *EVM) Call_new(txExtra *types.TxExtra, caller ContractRef, addr common
 		//} else {
 		//	evm.StateDB.DiscardSnapshot(snapshot)
 	}
+
 	return ret, gas, err
 }
 
@@ -527,7 +528,7 @@ func (evm *EVM) StaticCall_new(txExtra *types.TxExtra, caller ContractRef, addr 
 		// Initialise a new contract and set the code that is to be used by the EVM.
 		// The contract is a scoped environment for this execution context only.
 		contract := NewContract(caller, AccountRef(addrCopy), new(big.Int), gas)
-		contract.SetCallCode(&addrCopy, evm.StateDB.GetCodeHash(addrCopy), evm.StateDB.GetCode(addrCopy))
+		contract.SetCallCode(&addrCopy, txExtra.GetCodeHash(addrCopy), evm.StateDB.GetCode(addrCopy))
 		// When an error was returned by the EVM or when setting the creation code
 		// above we revert to the snapshot and consume any gas remaining. Additionally
 		// when we're in Homestead this also counts for code storage gas errors.
@@ -691,7 +692,6 @@ func (evm *EVM) create_new(txExtra *types.TxExtra, caller ContractRef, codeAndHa
 			evm.Config.Tracer.CaptureEnter(typ, caller.Address(), address, codeAndHash.code, gas, value)
 		}
 	}
-
 	ret, err := evm.interpreter.Run_new(txExtra, contract, nil, false)
 
 	// Check whether the max code size has been exceeded, assign err if the case.
