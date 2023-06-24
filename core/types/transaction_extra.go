@@ -2,6 +2,7 @@ package types
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/base64"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -42,6 +43,8 @@ type TxExtra struct {
 
 	Refund   uint64
 	MSuicide map[common.Address]bool
+
+	logs map[common.Hash][]*Log
 }
 
 func NewTxExtra(hash common.Hash) *TxExtra {
@@ -61,6 +64,7 @@ func NewTxExtra(hash common.Hash) *TxExtra {
 		PostCode:         map[common.Address][]byte{},
 		Refund:           0,
 		MSuicide:         map[common.Address]bool{},
+		logs:             map[common.Hash][]*Log{},
 	}
 }
 
@@ -80,6 +84,7 @@ func (t *TxExtra) Copy() *TxExtra {
 		PreCode:          make(map[common.Address][]byte),
 		PostCode:         make(map[common.Address][]byte),
 		Refund:           t.Refund,
+		logs:             make(map[common.Hash][]*Log),
 	}
 	for address, account := range t.PreState {
 		cpy.PreState[address] = &StateAccount{
@@ -137,6 +142,13 @@ func (t *TxExtra) Copy() *TxExtra {
 
 	for address, b := range t.MSuicide {
 		cpy.MSuicide[address] = b
+	}
+
+	for hash, logs := range t.logs {
+		cpy.logs[hash] = make([]*Log, len(logs))
+		for _, l := range logs {
+			cpy.logs[hash] = append(cpy.logs[hash], l)
+		}
 	}
 
 	return cpy
@@ -199,6 +211,14 @@ func (t *TxExtra) Revert(snap *TxExtra) {
 
 	for address, b := range snap.MSuicide {
 		t.MSuicide[address] = b
+	}
+
+	t.logs = make(map[common.Hash][]*Log)
+	for hash, logs := range snap.logs {
+		t.logs[hash] = make([]*Log, len(logs))
+		for _, l := range logs {
+			t.logs[hash] = append(t.logs[hash], l)
+		}
 	}
 
 	t.Refund = snap.Refund
@@ -298,7 +318,11 @@ func (t *TxExtra) GetPostStorageProof(address common.Address, hash common.Hash) 
 
 func (t *TxExtra) GetPreRootByAddress(address common.Address) common.Hash {
 	//log.Info("测试", "hash", t.TxHash.Hex(), "address", address, "prestate", t.PreState[address])
-	return t.PreState[address].Root
+	s := t.PreState[address]
+	if s != nil {
+		return s.Root
+	}
+	return common.Hash{}
 }
 
 func (t *TxExtra) GetPostRootByAddress(address common.Address) common.Hash {
@@ -313,7 +337,11 @@ func (t *TxExtra) GetPostRootByAddress(address common.Address) common.Hash {
 
 func (t *TxExtra) GetPreCodeHashByAddress(address common.Address) []byte {
 	//log.Info("测试", "hash", t.TxHash.Hex(), "address", address, "prestate", t.PreState[address])
-	return t.PreState[address].CodeHash
+	s := t.PreState[address]
+	if s != nil {
+		return s.CodeHash
+	}
+	return nil
 }
 
 func (t *TxExtra) GetPostCodeHashByAddress(address common.Address) []byte {
@@ -435,6 +463,51 @@ func (t *TxExtra) AddBalance(address common.Address, amout *big.Int) {
 func (t *TxExtra) CanTransfer(address common.Address, amount *big.Int) bool {
 	return t.GetBalance(address).Cmp(amount) >= 0
 }
+
+func (t *TxExtra) Exist(address common.Address) bool {
+	if t.PreState[address] != nil {
+		return true
+	}
+	return false
+}
+
+func (t *TxExtra) Empty(address common.Address) bool {
+	s := t.PreState[address]
+	return s == nil || (s.Nonce == 0 && s.Balance.Sign() == 0 && bytes.Equal(s.CodeHash, EmptyCodeHash.Bytes()))
+}
+
+func (t *TxExtra) CreateAccount(address common.Address) {
+	t.AddPreState(address, &StateAccount{
+		Nonce:    0,
+		Balance:  new(big.Int),
+		Root:     emptyRoot,
+		CodeHash: emptyCodeHash,
+	})
+}
+
+func (t *TxExtra) AddLog(log *Log) {
+	t.logs[t.TxHash] = append(t.logs[t.TxHash], log)
+}
+
+// GetLogs returns the logs matching the specified transaction hash, and annotates
+// them with the given blockNumber and blockHash.
+func (t *TxExtra) GetLogs(hash common.Hash, blockNumber uint64, blockHash common.Hash) []*Log {
+	logs := t.logs[hash]
+	for _, l := range logs {
+		l.BlockNumber = blockNumber
+		l.BlockHash = blockHash
+	}
+	return logs
+}
+
+func (t *TxExtra) Logs() []*Log {
+	var logs []*Log
+	for _, lgs := range t.logs {
+		logs = append(logs, lgs...)
+	}
+	return logs
+}
+
 func IsTxExtra(blockNumber *big.Int) bool {
 	fileInfo, err := os.Stat("/Users/yulin/eth/execution/pioneer/build/bin/minerExtra/" + blockNumber.String() + ".txt")
 	if os.IsNotExist(err) {
@@ -477,12 +550,12 @@ func ReadFileByHash(blockNumber *big.Int, hash common.Hash) *TxExtra {
 				if enc, err := base64.StdEncoding.DecodeString(lArr[2]); err == nil {
 					data := new(StateAccount)
 					if err := rlp.DecodeBytes(enc, data); err != nil {
-						txExtra.AddPreState(common.HexToAddress(lArr[1]), &StateAccount{
-							Nonce:    0,
-							Balance:  new(big.Int),
-							Root:     emptyRoot,
-							CodeHash: emptyCodeHash,
-						})
+						//txExtra.AddPreState(common.HexToAddress(lArr[1]), &StateAccount{
+						//	Nonce:    0,
+						//	Balance:  new(big.Int),
+						//	Root:     emptyRoot,
+						//	CodeHash: emptyCodeHash,
+						//})
 						log.Error("ReadFileByHash Failed to decode state object", "addr", common.HexToAddress(lArr[1]), "err", err)
 					} else {
 						txExtra.AddPreState(common.HexToAddress(lArr[1]), data)

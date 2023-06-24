@@ -18,6 +18,7 @@ package vm
 
 import (
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 	"math/big"
 	"sync/atomic"
 
@@ -268,22 +269,22 @@ func (evm *EVM) Call_new(txExtra *types.TxExtra, caller ContractRef, addr common
 	snap := txExtra.Copy()
 	p, isPrecompile := evm.precompile(addr)
 	debug := evm.Config.Tracer != nil
-	//if !evm.StateDB.Exist(addr) {
-	//	if !isPrecompile && evm.chainRules.IsEIP158 && value.Sign() == 0 {
-	//		// Calling a non existing account, don't do anything, but ping the tracer
-	//		if debug {
-	//			if evm.depth == 0 {
-	//				evm.Config.Tracer.CaptureStart(evm, caller.Address(), addr, false, input, gas, value)
-	//				evm.Config.Tracer.CaptureEnd(ret, 0, nil)
-	//			} else {
-	//				evm.Config.Tracer.CaptureEnter(CALL, caller.Address(), addr, input, gas, value)
-	//				evm.Config.Tracer.CaptureExit(ret, 0, nil)
-	//			}
-	//		}
-	//		return nil, gas, nil
-	//	}
-	//	//evm.StateDB.CreateAccount(addr)
-	//}
+	if !txExtra.Exist(addr) {
+		if !isPrecompile && evm.chainRules.IsEIP158 && value.Sign() == 0 {
+			// Calling a non existing account, don't do anything, but ping the tracer
+			if debug {
+				if evm.depth == 0 {
+					evm.Config.Tracer.CaptureStart(evm, caller.Address(), addr, false, input, gas, value)
+					evm.Config.Tracer.CaptureEnd(ret, 0, nil)
+				} else {
+					evm.Config.Tracer.CaptureEnter(CALL, caller.Address(), addr, input, gas, value)
+					evm.Config.Tracer.CaptureExit(ret, 0, nil)
+				}
+			}
+			return nil, gas, nil
+		}
+		txExtra.CreateAccount(addr)
+	}
 
 	//evm.Context.Transfer(evm.StateDB, caller.Address(), addr, value)
 	txExtra.Transfer(caller.Address(), addr, value)
@@ -328,7 +329,9 @@ func (evm *EVM) Call_new(txExtra *types.TxExtra, caller ContractRef, addr common
 	if err != nil {
 		//evm.StateDB.RevertToSnapshot(snapshot)
 		//txExtra.SetRefund(snap.GetRefund())
+		log.Info("logInfo", "hash", txExtra.TxHash.Hex(), "logs", len(snap.Logs()), "logs2", len(txExtra.Logs()))
 		txExtra.Revert(snap)
+		log.Info("logInfo", "hash", txExtra.TxHash.Hex(), "logs", len(snap.Logs()), "logs2", len(txExtra.Logs()))
 		if err != ErrExecutionReverted {
 			gas = 0
 		}
@@ -674,7 +677,8 @@ func (evm *EVM) create_new(txExtra *types.TxExtra, caller ContractRef, codeAndHa
 	}
 	// Create a new account on the state
 	snapshot := evm.StateDB.Snapshot()
-	evm.StateDB.CreateAccount(address)
+	//evm.StateDB.CreateAccount(address)
+	txExtra.CreateAccount(address)
 	if evm.chainRules.IsEIP158 {
 		txExtra.SetNonce(address, 1)
 	}

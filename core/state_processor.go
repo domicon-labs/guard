@@ -167,7 +167,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 
 									//log.Info("PreStorageInfo", "hash", txExtra.TxHash.Hex(), "addr", addr.Hex(), "hash", hash.Hex(),
 									//	"val", c.Hex(), "proof", proof)
-									if root == types.EmptyRootHash {
+									if root == (common.Hash{}) || root == types.EmptyRootHash {
 										continue
 									}
 									_, err := trie.VerifyProof(root, crypto.Keccak256(hash.Bytes()), proof)
@@ -210,7 +210,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 
 							for address, code := range txExtra.PreCode {
 								codeHash := txExtra.GetPreCodeHashByAddress(address)
-								if bytes.Equal(codeHash, types.EmptyCodeHash.Bytes()) {
+								if codeHash == nil || bytes.Equal(codeHash, types.EmptyCodeHash.Bytes()) {
 									continue
 								}
 								if crypto.Keccak256Hash(code) != common.BytesToHash(codeHash) {
@@ -265,7 +265,9 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		}
 		wg.Wait()
 		close(interruptCh)
-		for _, transaction := range block.Transactions() {
+
+		pUseGas := new(uint64)
+		for i, transaction := range block.Transactions() {
 			if transaction.TxExtra != nil {
 				txExtra := transaction.TxExtra
 				//if txExtra.TxHash.String() == "0x6c929e1c3d860ee225d7f3a7addf9e3f740603d243260536dfa2f3cf02b51de4" {
@@ -284,7 +286,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 						continue
 					}
 					temp := txExtra.PreState[address]
-					//log.Info("数据对比", "addr", address.Hex(), "执行数据", temp, "预估数据", data)
+					log.Info("数据对比", "addr", address.Hex(), "执行数据", temp, "预估数据", data)
 					if data.Nonce != temp.Nonce {
 						log.Error("Account Nonce Error", "hash", txExtra.TxHash.Hex(),
 							"address", address,
@@ -346,20 +348,22 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 				//	log.Info("测试中间根", "root", statedb.IntermediateRoot(p.config.IsEIP158(blockNumber)).Hex(),
 				//		"txExtraRoot", txExtra.PostStateRoot.Hex())
 				//}
+
+				statedb.SetTxContext(transaction.Hash(), i)
+				for _, l := range txExtra.Logs() {
+					statedb.AddLog(l)
+				}
+				transaction.Receipt.Logs = statedb.GetLogs(transaction.Hash(), blockNumber.Uint64(), blockHash)
+				transaction.Receipt.Bloom = types.CreateBloom(types.Receipts{transaction.Receipt})
 			}
 			if transaction.Receipt != nil {
+				*pUseGas += transaction.Receipt.GasUsed
+				transaction.Receipt.CumulativeGasUsed = *pUseGas
 				receipts = append(receipts, transaction.Receipt)
 				allLogs = append(allLogs, transaction.Receipt.Logs...)
 			}
+			log.Info("transaction", "hash", transaction.Hash().Hex(), "logs", transaction.Receipt.Logs)
 		}
-	}
-
-	//
-	pUseGas := new(uint64)
-	for _, receipt := range receipts {
-		*pUseGas += receipt.GasUsed
-		receipt.CumulativeGasUsed = *pUseGas
-		log.Info("receipts", "receipt", receipt)
 	}
 
 	// Fail if Shanghai not enabled and len(withdrawals) is non-zero.
@@ -420,6 +424,7 @@ func applyTransaction(msg *Message, config *params.ChainConfig, gp *GasPool, sta
 	receipt.BlockHash = blockHash
 	receipt.BlockNumber = blockNumber
 	receipt.TransactionIndex = uint(statedb.TxIndex())
+
 	return receipt, err
 }
 
@@ -461,8 +466,8 @@ func applyTransaction_new(txExtra *types.TxExtra, msg *Message, config *params.C
 	}
 
 	// Set the receipt logs and create the bloom filter.
-	receipt.Logs = statedb.GetLogs(tx.Hash(), blockNumber.Uint64(), blockHash)
-	receipt.Bloom = types.CreateBloom(types.Receipts{receipt})
+	//receipt.Logs = statedb.GetLogs(tx.Hash(), blockNumber.Uint64(), blockHash)
+	//receipt.Bloom = types.CreateBloom(types.Receipts{receipt})
 	receipt.BlockHash = blockHash
 	receipt.BlockNumber = blockNumber
 	receipt.TransactionIndex = uint(statedb.TxIndex())

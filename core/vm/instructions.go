@@ -870,6 +870,9 @@ func opSelfdestruct(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext
 	} else {
 		beneficiary := scope.Stack.pop()
 		balance := txExtra.GetBalance(scope.Contract.Address())
+		if !txExtra.Exist(beneficiary.Bytes20()) {
+			txExtra.CreateAccount(beneficiary.Bytes20())
+		}
 		txExtra.AddBalance(beneficiary.Bytes20(), balance)
 		txExtra.Suicide(scope.Contract.Address())
 
@@ -899,14 +902,25 @@ func makeLog(size int) executionFunc {
 		}
 
 		d := scope.Memory.GetCopy(int64(mStart.Uint64()), int64(mSize.Uint64()))
-		interpreter.evm.StateDB.AddLog(&types.Log{
-			Address: scope.Contract.Address(),
-			Topics:  topics,
-			Data:    d,
-			// This is a non-consensus field, but assigned here because
-			// core/state doesn't know the current block number.
-			BlockNumber: interpreter.evm.Context.BlockNumber.Uint64(),
-		})
+		if txExtra == nil {
+			interpreter.evm.StateDB.AddLog(&types.Log{
+				Address: scope.Contract.Address(),
+				Topics:  topics,
+				Data:    d,
+				// This is a non-consensus field, but assigned here because
+				// core/state doesn't know the current block number.
+				BlockNumber: interpreter.evm.Context.BlockNumber.Uint64(),
+			})
+		} else {
+			txExtra.AddLog(&types.Log{
+				Address: scope.Contract.Address(),
+				Topics:  topics,
+				Data:    d,
+				// This is a non-consensus field, but assigned here because
+				// core/state doesn't know the current block number.
+				BlockNumber: interpreter.evm.Context.BlockNumber.Uint64(),
+			})
+		}
 
 		return nil, nil
 	}

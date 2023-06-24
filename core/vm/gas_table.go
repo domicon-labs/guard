@@ -452,15 +452,29 @@ func gasCall(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize
 		transfersValue = !stack.Back(2).IsZero()
 		address        = common.Address(stack.Back(1).Bytes20())
 	)
-	if evm.chainRules.IsEIP158 {
-		if transfersValue && evm.StateDB.Empty(address) {
+	log.Info("gasCall", "addr", address)
+	if txExtra == nil {
+		if evm.chainRules.IsEIP158 {
+			if transfersValue && evm.StateDB.Empty(address) {
+				gas += params.CallNewAccountGas
+			}
+		} else if !evm.StateDB.Exist(address) {
 			gas += params.CallNewAccountGas
 		}
-	} else if !evm.StateDB.Exist(address) {
-		gas += params.CallNewAccountGas
-	}
-	if transfersValue {
-		gas += params.CallValueTransferGas
+		if transfersValue {
+			gas += params.CallValueTransferGas
+		}
+	} else {
+		if evm.chainRules.IsEIP158 {
+			if transfersValue && txExtra.Empty(address) {
+				gas += params.CallNewAccountGas
+			}
+		} else if !txExtra.Exist(address) {
+			gas += params.CallNewAccountGas
+		}
+		if transfersValue {
+			gas += params.CallValueTransferGas
+		}
 	}
 	memoryGas, err := memoryGasCost(mem, memorySize)
 	if err != nil {

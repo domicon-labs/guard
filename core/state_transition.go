@@ -582,6 +582,9 @@ func (st *StateTransition) TransitionDb_new(txExtra *types.TxExtra) (*ExecutionR
 	} else {
 		fee := new(big.Int).SetUint64(st.gasUsed())
 		fee.Mul(fee, effectiveTip)
+		if !txExtra.Exist(st.evm.Context.Coinbase) {
+			txExtra.CreateAccount(st.evm.Context.Coinbase)
+		}
 		txExtra.AddBalance(st.evm.Context.Coinbase, fee)
 		//st.state.AddBalance(st.evm.Context.Coinbase, fee)
 	}
