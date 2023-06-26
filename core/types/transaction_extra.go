@@ -45,6 +45,9 @@ type TxExtra struct {
 	MSuicide map[common.Address]bool
 
 	logs map[common.Hash][]*Log
+
+	Hasher    crypto.KeccakState
+	HasherBuf common.Hash
 }
 
 func NewTxExtra(hash common.Hash) *TxExtra {

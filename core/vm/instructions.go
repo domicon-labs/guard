@@ -235,21 +235,35 @@ func opSAR(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext, txExtra
 func opKeccak256(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext, txExtra *types.TxExtra) ([]byte, error) {
 	offset, size := scope.Stack.pop(), scope.Stack.peek()
 	data := scope.Memory.GetPtr(int64(offset.Uint64()), int64(size.Uint64()))
+	if txExtra == nil {
+		if interpreter.hasher == nil {
+			interpreter.hasher = crypto.NewKeccakState()
+		} else {
+			interpreter.hasher.Reset()
+		}
+		interpreter.hasher.Write(data)
+		interpreter.hasher.Read(interpreter.hasherBuf[:])
+		evm := interpreter.evm
+		if evm.Config.EnablePreimageRecording {
+			evm.StateDB.AddPreimage(interpreter.hasherBuf, data)
+		}
 
-	if interpreter.hasher == nil {
-		interpreter.hasher = crypto.NewKeccakState()
+		size.SetBytes(interpreter.hasherBuf[:])
 	} else {
-		interpreter.hasher.Reset()
-	}
-	interpreter.hasher.Write(data)
-	interpreter.hasher.Read(interpreter.hasherBuf[:])
+		if txExtra.Hasher == nil {
+			txExtra.Hasher = crypto.NewKeccakState()
+		} else {
+			txExtra.Hasher.Reset()
+		}
+		txExtra.Hasher.Write(data)
+		txExtra.Hasher.Read(txExtra.HasherBuf[:])
+		evm := interpreter.evm
+		if evm.Config.EnablePreimageRecording {
+			evm.StateDB.AddPreimage(txExtra.HasherBuf, data)
+		}
 
-	evm := interpreter.evm
-	if evm.Config.EnablePreimageRecording {
-		evm.StateDB.AddPreimage(interpreter.hasherBuf, data)
+		size.SetBytes(txExtra.HasherBuf[:])
 	}
-
-	size.SetBytes(interpreter.hasherBuf[:])
 	return nil, nil
 }
 func opAddress(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext, txExtra *types.TxExtra) ([]byte, error) {
