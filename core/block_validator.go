@@ -22,7 +22,6 @@ import (
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
 )
@@ -125,9 +124,9 @@ func (v *BlockValidator) ValidateState(block *types.Block, statedb *state.StateD
 		return fmt.Errorf("invalid gas used (remote: %d local: %d)", block.GasUsed(), usedGas)
 	}
 
-	for i, receipt := range receipts {
-		log.Info("ValidateState", "blockNumber", block.NumberU64(), "index", i, "receipt", receipt)
-	}
+	//for i, receipt := range receipts {
+	//	log.Info("ValidateState", "blockNumber", block.NumberU64(), "index", i, "receipt", receipt)
+	//}
 	// Validate the received block's bloom with the one derived from the generated receipts.
 	// For valid blocks this should always validate to true.
 	rbloom := types.CreateBloom(receipts)
