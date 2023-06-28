@@ -807,5 +807,11 @@ func (evm *EVM) Create2(caller ContractRef, code []byte, gas uint64, endowment *
 	return evm.create(caller, codeAndHash, gas, endowment, contractAddr, CREATE2)
 }
 
+func (evm *EVM) Create2_new(txExtra *types.TxExtra, caller ContractRef, code []byte, gas uint64, endowment *big.Int, salt *uint256.Int) (ret []byte, contractAddr common.Address, leftOverGas uint64, err error) {
+	codeAndHash := &codeAndHash{code: code}
+	contractAddr = crypto.CreateAddress2(caller.Address(), salt.Bytes32(), codeAndHash.Hash().Bytes())
+	return evm.create_new(txExtra, caller, codeAndHash, gas, endowment, contractAddr, CREATE2)
+}
+
 // ChainConfig returns the environment's chain configuration
 func (evm *EVM) ChainConfig() *params.ChainConfig { return evm.chainConfig }

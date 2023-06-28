@@ -20,7 +20,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 )
@@ -283,7 +282,12 @@ func opBalance(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext, txE
 }
 
 func opOrigin(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext, txExtra *types.TxExtra) ([]byte, error) {
-	scope.Stack.push(new(uint256.Int).SetBytes(interpreter.evm.Origin.Bytes()))
+	//log.Info("opOrigin", "orgin", interpreter.evm.Origin.Hex())
+	if txExtra == nil {
+		scope.Stack.push(new(uint256.Int).SetBytes(interpreter.evm.Origin.Bytes()))
+	} else {
+		scope.Stack.push(new(uint256.Int).SetBytes(txExtra.Origin.Bytes()))
+	}
 	return nil, nil
 }
 func opCaller(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext, txExtra *types.TxExtra) ([]byte, error) {
@@ -548,10 +552,12 @@ func opSstore(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext, txEx
 	}
 	loc := scope.Stack.pop()
 	val := scope.Stack.pop()
+	//log.Info("opSstore", "hash", txExtra.TxHash.Hex(), "addr", scope.Contract.Address(), "key", loc.Hex(), "value", val.Hex())
 	if txExtra == nil {
 		interpreter.evm.StateDB.SetState(scope.Contract.Address(),
 			loc.Bytes32(), val.Bytes32())
 	} else {
+		//log.Info("opSstore", "hash", txExtra.TxHash, "addr", scope.Contract.Address(), "key", loc.Hex(), "val", val.Hex())
 		txExtra.SetState(scope.Contract.Address(), loc.Bytes32(), val.Bytes32())
 	}
 	return nil, nil
@@ -624,8 +630,17 @@ func opCreate(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext, txEx
 	if !value.IsZero() {
 		bigVal = value.ToBig()
 	}
-
-	res, addr, returnGas, suberr := interpreter.evm.Create(scope.Contract, input, gas, bigVal)
+	var (
+		res       []byte
+		addr      common.Address
+		returnGas uint64
+		suberr    error
+	)
+	if txExtra == nil {
+		res, addr, returnGas, suberr = interpreter.evm.Create(scope.Contract, input, gas, bigVal)
+	} else {
+		res, addr, returnGas, suberr = interpreter.evm.Create_new(txExtra, scope.Contract, input, gas, bigVal)
+	}
 	// Push item on the stack based on the returned error. If the ruleset is
 	// homestead we must check for CodeStoreOutOfGasError (homestead only
 	// rule) and treat as an error, if the ruleset is frontier we must
@@ -669,8 +684,19 @@ func opCreate2(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext, txE
 	if !endowment.IsZero() {
 		bigEndowment = endowment.ToBig()
 	}
-	res, addr, returnGas, suberr := interpreter.evm.Create2(scope.Contract, input, gas,
-		bigEndowment, &salt)
+	var (
+		res       []byte
+		addr      common.Address
+		returnGas uint64
+		suberr    error
+	)
+	if txExtra == nil {
+		res, addr, returnGas, suberr = interpreter.evm.Create2(scope.Contract, input, gas,
+			bigEndowment, &salt)
+	} else {
+		res, addr, returnGas, suberr = interpreter.evm.Create2_new(txExtra, scope.Contract, input, gas,
+			bigEndowment, &salt)
+	}
 	// Push item on the stack based on the returned error.
 	if suberr != nil {
 		stackvalue.Clear()
@@ -760,7 +786,16 @@ func opCallCode(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext, tx
 		bigVal = value.ToBig()
 	}
 
-	ret, returnGas, err := interpreter.evm.CallCode(scope.Contract, toAddr, args, gas, bigVal)
+	var (
+		ret       []byte
+		returnGas uint64
+		err       error
+	)
+	if txExtra == nil {
+		ret, returnGas, err = interpreter.evm.CallCode(scope.Contract, toAddr, args, gas, bigVal)
+	} else {
+		ret, returnGas, err = interpreter.evm.CallCode_new(txExtra, scope.Contract, toAddr, args, gas, bigVal)
+	}
 	if err != nil {
 		temp.Clear()
 	} else {
@@ -890,7 +925,6 @@ func opSelfdestruct(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext
 		txExtra.AddBalance(beneficiary.Bytes20(), balance)
 		txExtra.Suicide(scope.Contract.Address())
 
-		log.Info("opSelfdestruct", "addr", scope.Contract.Address().Hex())
 		if tracer := interpreter.evm.Config.Tracer; tracer != nil {
 			tracer.CaptureEnter(SELFDESTRUCT, scope.Contract.Address(), beneficiary.Bytes20(), []byte{}, 0, balance)
 			tracer.CaptureExit([]byte{}, 0, nil)
