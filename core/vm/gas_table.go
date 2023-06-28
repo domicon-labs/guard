@@ -101,7 +101,7 @@ func gasSStore(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySi
 			y, x    = stack.Back(1), stack.Back(0)
 			current = evm.StateDB.GetState(contract.Address(), x.Bytes32())
 		)
-
+		//log.Info("info", "address", contract.Address(), "key", x.Hex(), "val", current.Hex(), "x", x.Sign(), "y", y.Sign())
 		// The legacy gas metering only takes into consideration the current state
 		// Legacy rules should be applied if we are in Petersburg (removal of EIP-1283)
 		// OR Constantinople is not active
@@ -115,7 +115,7 @@ func gasSStore(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySi
 			case current == (common.Hash{}) && y.Sign() != 0: // 0 => non 0
 				return params.SstoreSetGas, nil
 			case current != (common.Hash{}) && y.Sign() == 0: // non 0 => 0
-				log.Info("gasSStore", "current", current, "addr", contract.Address(), "x", x.Hex())
+				//log.Info("gasSStore", "current", current, "addr", contract.Address(), "x", x.Hex())
 				evm.StateDB.AddRefund(params.SstoreRefundGas)
 				return params.SstoreClearGas, nil
 			default: // non 0 => non 0 (or 0 => 0)
@@ -153,7 +153,6 @@ func gasSStore(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySi
 		}
 		if original != (common.Hash{}) {
 			if current == (common.Hash{}) { // recreate slot (2.2.1.1)
-				log.Info("originalInfo", "original", original, "current", current)
 				evm.StateDB.SubRefund(params.NetSstoreClearRefund)
 			} else if value == (common.Hash{}) { // delete slot (2.2.1.2)
 				evm.StateDB.AddRefund(params.NetSstoreClearRefund)
@@ -172,7 +171,7 @@ func gasSStore(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySi
 			y, x    = stack.Back(1), stack.Back(0)
 			current = txExtra.GetState(contract.Address(), x.Bytes32())
 		)
-
+		//log.Info("info", "address", contract.Address(), "key", x.Hex(), "val", current.Hex(), "x", x.Sign(), "y", y.Sign())
 		// The legacy gas metering only takes into consideration the current state
 		// Legacy rules should be applied if we are in Petersburg (removal of EIP-1283)
 		// OR Constantinople is not active
@@ -186,7 +185,7 @@ func gasSStore(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySi
 			case current == (common.Hash{}) && y.Sign() != 0: // 0 => non 0
 				return params.SstoreSetGas, nil
 			case current != (common.Hash{}) && y.Sign() == 0: // non 0 => 0
-				log.Info("gasSStore", "current", current, "addr", contract.Address(), "x", x.Hex())
+				//log.Info("gasSStore", "current", current, "addr", contract.Address(), "x", x.Hex())
 				txExtra.AddRefund(params.SstoreRefundGas)
 				return params.SstoreClearGas, nil
 			default: // non 0 => non 0 (or 0 => 0)
@@ -224,7 +223,6 @@ func gasSStore(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySi
 		}
 		if original != (common.Hash{}) {
 			if current == (common.Hash{}) { // recreate slot (2.2.1.1)
-				log.Info("originalInfo", "original", original, "current", current)
 				txExtra.SubRefund(params.NetSstoreClearRefund)
 			} else if value == (common.Hash{}) { // delete slot (2.2.1.2)
 				txExtra.AddRefund(params.NetSstoreClearRefund)
@@ -452,7 +450,6 @@ func gasCall(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize
 		transfersValue = !stack.Back(2).IsZero()
 		address        = common.Address(stack.Back(1).Bytes20())
 	)
-	log.Info("gasCall", "addr", address)
 	if txExtra == nil {
 		if evm.chainRules.IsEIP158 {
 			if transfersValue && evm.StateDB.Empty(address) {
