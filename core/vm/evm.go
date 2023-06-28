@@ -18,7 +18,6 @@ package vm
 
 import (
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/log"
 	"math/big"
 	"sync/atomic"
 
@@ -285,7 +284,6 @@ func (evm *EVM) Call_new(txExtra *types.TxExtra, caller ContractRef, addr common
 		}
 		txExtra.CreateAccount(addr)
 	}
-
 	//evm.Context.Transfer(evm.StateDB, caller.Address(), addr, value)
 	txExtra.Transfer(caller.Address(), addr, value)
 	// Capture the tracer start/end events in debug mode
@@ -329,9 +327,9 @@ func (evm *EVM) Call_new(txExtra *types.TxExtra, caller ContractRef, addr common
 	if err != nil {
 		//evm.StateDB.RevertToSnapshot(snapshot)
 		//txExtra.SetRefund(snap.GetRefund())
-		log.Info("logInfo", "hash", txExtra.TxHash.Hex(), "logs", len(snap.Logs()), "logs2", len(txExtra.Logs()))
+		//log.Info("snap", "hash", txExtra.TxHash.Hex(), "logs", len(snap.Logs()), "logs2", len(txExtra.Logs()))
 		txExtra.Revert(snap)
-		log.Info("logInfo", "hash", txExtra.TxHash.Hex(), "logs", len(snap.Logs()), "logs2", len(txExtra.Logs()))
+		//log.Info("snap", "hash", txExtra.TxHash.Hex(), "logs", len(snap.Logs()), "logs2", len(txExtra.Logs()))
 		if err != ErrExecutionReverted {
 			gas = 0
 		}
@@ -350,6 +348,50 @@ func (evm *EVM) Call_new(txExtra *types.TxExtra, caller ContractRef, addr common
 //
 // CallCode differs from Call in the sense that it executes the given address'
 // code with the caller as context.
+func (evm *EVM) CallCode_new(txExtra *types.TxExtra, caller ContractRef, addr common.Address, input []byte, gas uint64, value *big.Int) (ret []byte, leftOverGas uint64, err error) {
+	// Fail if we're trying to execute above the call depth limit
+	if evm.depth > int(params.CallCreateDepth) {
+		return nil, gas, ErrDepth
+	}
+	// Fail if we're trying to transfer more than the available balance
+	// Note although it's noop to transfer X ether to caller itself. But
+	// if caller doesn't have enough balance, it would be an error to allow
+	// over-charging itself. So the check here is necessary.
+	if !txExtra.CanTransfer(caller.Address(), value) {
+		return nil, gas, ErrInsufficientBalance
+	}
+	//var snapshot = evm.StateDB.Snapshot()
+	snap := txExtra.Copy()
+	// Invoke tracer hooks that signal entering/exiting a call frame
+	if evm.Config.Tracer != nil {
+		evm.Config.Tracer.CaptureEnter(CALLCODE, caller.Address(), addr, input, gas, value)
+		defer func(startGas uint64) {
+			evm.Config.Tracer.CaptureExit(ret, startGas-gas, err)
+		}(gas)
+	}
+
+	// It is allowed to call precompiles, even via delegatecall
+	if p, isPrecompile := evm.precompile(addr); isPrecompile {
+		ret, gas, err = RunPrecompiledContract(p, input, gas)
+	} else {
+		addrCopy := addr
+		// Initialise a new contract and set the code that is to be used by the EVM.
+		// The contract is a scoped environment for this execution context only.
+		contract := NewContract(caller, AccountRef(caller.Address()), value, gas)
+		contract.SetCallCode(&addrCopy, txExtra.GetCodeHash(addrCopy), txExtra.GetCode(addrCopy))
+		ret, err = evm.interpreter.Run_new(txExtra, contract, input, false)
+		gas = contract.Gas
+	}
+	if err != nil {
+		txExtra.Revert(snap)
+		//evm.StateDB.RevertToSnapshot(snapshot)
+		if err != ErrExecutionReverted {
+			gas = 0
+		}
+	}
+	return ret, gas, err
+}
+
 func (evm *EVM) CallCode(caller ContractRef, addr common.Address, input []byte, gas uint64, value *big.Int) (ret []byte, leftOverGas uint64, err error) {
 	// Fail if we're trying to execute above the call depth limit
 	if evm.depth > int(params.CallCreateDepth) {
@@ -657,7 +699,7 @@ func (evm *EVM) create_new(txExtra *types.TxExtra, caller ContractRef, codeAndHa
 	if evm.depth > int(params.CallCreateDepth) {
 		return nil, common.Address{}, gas, ErrDepth
 	}
-	if !evm.Context.CanTransfer(evm.StateDB, caller.Address(), value) {
+	if !txExtra.CanTransfer(caller.Address(), value) {
 		return nil, common.Address{}, gas, ErrInsufficientBalance
 	}
 	nonce := txExtra.GetNonce(caller.Address())
@@ -676,7 +718,8 @@ func (evm *EVM) create_new(txExtra *types.TxExtra, caller ContractRef, codeAndHa
 		return nil, common.Address{}, 0, ErrContractAddressCollision
 	}
 	// Create a new account on the state
-	snapshot := evm.StateDB.Snapshot()
+	//snapshot := evm.StateDB.Snapshot()
+	snap := txExtra.Copy()
 	//evm.StateDB.CreateAccount(address)
 	txExtra.CreateAccount(address)
 	if evm.chainRules.IsEIP158 {
@@ -726,7 +769,8 @@ func (evm *EVM) create_new(txExtra *types.TxExtra, caller ContractRef, codeAndHa
 	// above we revert to the snapshot and consume any gas remaining. Additionally
 	// when we're in homestead this also counts for code storage gas errors.
 	if err != nil && (evm.chainRules.IsHomestead || err != ErrCodeStoreOutOfGas) {
-		evm.StateDB.RevertToSnapshot(snapshot)
+		//evm.StateDB.RevertToSnapshot(snapshot)
+		txExtra.Revert(snap)
 		if err != ErrExecutionReverted {
 			contract.UseGas(contract.Gas)
 		}
