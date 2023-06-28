@@ -18,7 +18,6 @@ package core
 
 import (
 	"fmt"
-	"github.com/ethereum/go-ethereum/log"
 	"math"
 	"math/big"
 
@@ -444,7 +443,7 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 	// - reset transient storage(eip 1153)
 	st.state.Prepare(rules, msg.From, st.evm.Context.Coinbase, msg.To, vm.ActivePrecompiles(rules), msg.AccessList)
 
-	log.Info("CallPre", "gasRemaining", st.gasRemaining)
+	//log.Info("CallPre", "gasRemaining", st.gasRemaining)
 	var (
 		ret   []byte
 		vmerr error // vm errors do not effect consensus and are therefore not assigned to err
@@ -457,7 +456,7 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 		ret, st.gasRemaining, vmerr = st.evm.Call(sender, st.to(), msg.Data, st.gasRemaining, msg.Value)
 	}
 
-	log.Info("CallPost", "gasRemaining", st.gasRemaining)
+	//log.Info("CallPost", "gasRemaining", st.gasRemaining)
 	if !rules.IsLondon {
 		// Before EIP-3529: refunds were capped to gasUsed / 2
 		st.refundGas(params.RefundQuotient)
@@ -480,7 +479,7 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 		st.state.AddBalance(st.evm.Context.Coinbase, fee)
 	}
 
-	log.Info("CallEnd", "gasRemaining", st.gasRemaining)
+	//log.Info("CallEnd", "gasRemaining", st.gasRemaining)
 	return &ExecutionResult{
 		UsedGas:    st.gasUsed(),
 		Err:        vmerr,
@@ -542,13 +541,11 @@ func (st *StateTransition) TransitionDb_new(txExtra *types.TxExtra) (*ExecutionR
 	// - reset transient storage(eip 1153)
 	st.state.Prepare(rules, msg.From, st.evm.Context.Coinbase, msg.To, vm.ActivePrecompiles(rules), msg.AccessList)
 
-	log.Info("CallPre", "gasRemaining", st.gasRemaining)
+	//log.Info("CallPre", "gasRemaining", st.gasRemaining)
 	var (
-		ret         []byte
-		vmerr       error // vm errors do not effect consensus and are therefore not assigned to err
-		txExtraCopy = new(types.TxExtra)
+		ret   []byte
+		vmerr error // vm errors do not effect consensus and are therefore not assigned to err
 	)
-	txExtraCopy = txExtra
 	if contractCreation {
 		//ret, _, st.gasRemaining, vmerr = st.evm.Create(sender, msg.Data, st.gasRemaining, msg.Value)
 		ret, _, st.gasRemaining, vmerr = st.evm.Create_new(txExtra, sender, msg.Data, st.gasRemaining, msg.Value)
@@ -557,18 +554,18 @@ func (st *StateTransition) TransitionDb_new(txExtra *types.TxExtra) (*ExecutionR
 		//st.state.SetNonce(msg.From, st.state.GetNonce(sender.Address())+1)
 		txExtra.SetNonce(msg.From, txExtra.GetNonce(sender.Address())+1)
 		//ret, st.gasRemaining, vmerr = st.evm.Call(sender, st.to(), msg.Data, st.gasRemaining, msg.Value)
-		ret, st.gasRemaining, vmerr = st.evm.Call_new(txExtraCopy, sender, st.to(), msg.Data, st.gasRemaining, msg.Value)
+		ret, st.gasRemaining, vmerr = st.evm.Call_new(txExtra, sender, st.to(), msg.Data, st.gasRemaining, msg.Value)
 	}
 
-	log.Info("CallPost", "gasRemaining", st.gasRemaining)
+	//log.Info("CallPost", "gasRemaining", st.gasRemaining)
 	if !rules.IsLondon {
 		// Before EIP-3529: refunds were capped to gasUsed / 2
 		//st.refundGas(params.RefundQuotient)
-		st.refundGas_new(txExtraCopy, params.RefundQuotient)
+		st.refundGas_new(txExtra, params.RefundQuotient)
 	} else {
 		// After EIP-3529: refunds are capped to gasUsed / 5
 		//st.refundGas(params.RefundQuotientEIP3529)
-		st.refundGas_new(txExtraCopy, params.RefundQuotientEIP3529)
+		st.refundGas_new(txExtra, params.RefundQuotientEIP3529)
 	}
 	effectiveTip := msg.GasPrice
 	if rules.IsLondon {
@@ -589,7 +586,7 @@ func (st *StateTransition) TransitionDb_new(txExtra *types.TxExtra) (*ExecutionR
 		//st.state.AddBalance(st.evm.Context.Coinbase, fee)
 	}
 
-	log.Info("CallEnd", "gasRemaining", st.gasRemaining)
+	//log.Info("CallEnd", "gasRemaining", st.gasRemaining)
 	return &ExecutionResult{
 		UsedGas:    st.gasUsed(),
 		Err:        vmerr,
@@ -601,12 +598,12 @@ func (st *StateTransition) refundGas(refundQuotient uint64) {
 	// Apply refund counter, capped to a refund quotient
 	refund := st.gasUsed() / refundQuotient
 
-	log.Info("refundGas_new", "refund", refund, "GetRefund", st.state.GetRefund())
+	//log.Info("refundGas GetRefund", "refund", refund, "GetRefund", st.state.GetRefund())
 	if refund > st.state.GetRefund() {
 		refund = st.state.GetRefund()
 	}
 
-	log.Info("refundGas_new", "refund", refund)
+	//log.Info("refundGas GetRefund end", "refund", refund)
 	st.gasRemaining += refund
 
 	// Return ETH for remaining gas, exchanged at the original rate.
@@ -621,11 +618,11 @@ func (st *StateTransition) refundGas(refundQuotient uint64) {
 func (st *StateTransition) refundGas_new(txExtra *types.TxExtra, refundQuotient uint64) {
 	// Apply refund counter, capped to a refund quotient
 	refund := st.gasUsed() / refundQuotient
-	log.Info("refundGas_new", "refund", refund)
+	//log.Info("refundGas_new", "refund", refund)
 	if refund > txExtra.GetRefund() {
 		refund = txExtra.GetRefund()
 	}
-	log.Info("refundGas_new", "refund", refund)
+	//log.Info("refundGas_new", "refund", refund)
 	st.gasRemaining += refund
 
 	// Return ETH for remaining gas, exchanged at the original rate.

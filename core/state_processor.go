@@ -97,13 +97,14 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 			log.Info("Process", "hash", tx.Hash().Hex(), "receipts", receipt)
 		}
 	} else {
+		//log.Info("new evm", "blockNumber", blockNumber.Uint64())
 		transactions := block.Transactions()
-		txChan := make(chan int, 10)
+		txChan := make(chan int, 1)
 
 		var wg sync.WaitGroup
 		wg.Add(len(transactions))
 		interruptCh := make(chan struct{})
-		for i := 0; i < 10; i++ {
+		for i := 0; i < 1; i++ {
 			go func() {
 				for {
 					select {
@@ -121,6 +122,8 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 						txExtra := types.ReadFileByHash(blockNumber, tx.Hash())
 						if txExtra != nil {
 							tx.TxExtra = txExtra
+
+							txExtra.Origin = msg.From
 							// 验证状态树数据
 							for addr, stobject := range txExtra.PreState {
 								proof := txExtra.GetPreProof(addr)
@@ -265,8 +268,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		}
 		wg.Wait()
 		close(interruptCh)
-
-		pUseGas := new(uint64)
+		//pUseGas := new(uint64)
 		for i, transaction := range block.Transactions() {
 			if transaction.TxExtra != nil {
 				txExtra := transaction.TxExtra
@@ -280,19 +282,19 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 						if txExtra.MSuicide[address] == true {
 							statedb.Suicide(address)
 						}
-						log.Error("State_processor Failed to decode state object", "addr", address, "err", err)
+						log.Error("PostState Failed to decode state object", "addr", address, "err", err)
 						//statedb.CreateAccount(address)
 
 						continue
 					}
 					temp := txExtra.PreState[address]
-					log.Info("数据对比", "addr", address.Hex(), "执行数据", temp, "预估数据", data)
+					//log.Info("数据对比", "addr", address.Hex(), "执行数据", temp, "预估数据", data)
 					if data.Nonce != temp.Nonce {
 						log.Error("Account Nonce Error", "hash", txExtra.TxHash.Hex(),
 							"address", address,
 							"执行数据", temp.Nonce,
 							"预计数据", data.Nonce)
-						//return statedb, nil, nil, 0, fmt.Errorf("Account Nonce Error")
+						return nil, nil, 0, fmt.Errorf("Account Nonce Error")
 					}
 
 					if data.Balance.Cmp(temp.Balance) != 0 {
@@ -300,9 +302,9 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 							"address", address,
 							"执行数据", temp.Balance,
 							"预计数据", data.Balance)
-						//return statedb, nil, nil, 0, fmt.Errorf("Account Balance Error")
+						return nil, nil, 0, fmt.Errorf("Account Balance Error")
 					}
-					//log.Info("执行后消息", "block", blockNumber, "hash", tx.Hash(), "address", address, "data", data)
+					//log.Info("修改账户内容", "address", address.Hex(), "balance", data.Balance, "nonce", data.Nonce)
 					statedb.SetBalance(address, data.Balance)
 					statedb.SetNonce(address, data.Nonce)
 				}
@@ -311,7 +313,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 					enc := txExtra.PostState[address]
 					data := new(types.StateAccount)
 					if err := rlp.DecodeBytes(enc, data); err != nil {
-						log.Error("State_processor Failed to decode state object", "addr", address, "err", err)
+						log.Error("PostStorage Failed to decode state object", "addr", address, "err", err)
 						//statedb.CreateAccount(address)
 						continue
 					}
@@ -322,8 +324,9 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 								"address", address, "hash", hash,
 								"执行数据", temp.Hex(),
 								"预计数据", c.Hex())
-							//return statedb, nil, nil, 0, fmt.Errorf("执行交易账户数据不一致")
+							return nil, nil, 0, fmt.Errorf("执行交易账户数据不一致")
 						}
+						//log.Info("修改Storage", "addr", address.Hex(), "key", hash, "val", c)
 						statedb.SetState(address, hash, c)
 					}
 				}
@@ -331,23 +334,13 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 					enc := txExtra.PostState[address]
 					data := new(types.StateAccount)
 					if err := rlp.DecodeBytes(enc, data); err != nil {
-						log.Error("State_processor Failed to decode state object", "addr", address, "err", err)
+						log.Error("PostCode Failed to decode state object", "addr", address, "err", err)
 						//statedb.CreateAccount(address)
 						continue
 					}
+					//log.Info("修改code", "addr", address.Hex())
 					statedb.SetCode(address, i)
 				}
-				//for address, _ := range txExtra.PostState {
-				//	nonce := statedb.GetNonce(address)
-				//	balance := statedb.GetBalance(address)
-				//	codeash := statedb.GetCodeHash(address)
-				//	log.Info("执行后数据", "addr", address.Hex(), "nonce", nonce, "balance", balance, "codeash", codeash)
-				//
-				//}
-				//if txExtra.TxHash.String() == "0x6c929e1c3d860ee225d7f3a7addf9e3f740603d243260536dfa2f3cf02b51de4" {
-				//	log.Info("测试中间根", "root", statedb.IntermediateRoot(p.config.IsEIP158(blockNumber)).Hex(),
-				//		"txExtraRoot", txExtra.PostStateRoot.Hex())
-				//}
 
 				statedb.SetTxContext(transaction.Hash(), i)
 				for _, l := range txExtra.Logs() {
@@ -357,13 +350,16 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 				transaction.Receipt.Bloom = types.CreateBloom(types.Receipts{transaction.Receipt})
 			}
 			if transaction.Receipt != nil {
-				*pUseGas += transaction.Receipt.GasUsed
-				transaction.Receipt.CumulativeGasUsed = *pUseGas
+				*usedGas += transaction.Receipt.GasUsed
+				transaction.Receipt.CumulativeGasUsed = *usedGas
 				receipts = append(receipts, transaction.Receipt)
 				allLogs = append(allLogs, transaction.Receipt.Logs...)
 			}
-			log.Info("transaction", "hash", transaction.Hash().Hex(), "logs", transaction.Receipt.Logs)
+			if statedb.IntermediateRoot(p.bc.chainConfig.IsEIP158(block.Number())) != transaction.TxExtra.PostStateRoot {
+				log.Info("transaction 后", "hash", transaction.Hash().Hex())
+			}
 		}
+		//usedGas = pUseGas
 	}
 
 	// Fail if Shanghai not enabled and len(withdrawals) is non-zero.
@@ -373,12 +369,12 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	}
 	// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
 	p.engine.Finalize(p.bc, header, statedb, block.Transactions(), block.Uncles(), withdrawals)
-	if blockNumber.Uint64() == 48643 {
+	if blockNumber.Uint64() == 246225 {
 		root2 := statedb.IntermediateRoot_new(p.bc.chainConfig.IsEIP158(block.Number()))
 		log.Info("查看Trie更改", "block", blockNumber, "header.root", block.Header().Root.Hex(), "root", root2.Hex())
 	}
-	root2 := statedb.IntermediateRoot(p.bc.chainConfig.IsEIP158(block.Number()))
-	log.Info("最终性比对", "block", blockNumber, "header.root", block.Header().Root.Hex(), "root", root2.Hex())
+	//root2 := statedb.IntermediateRoot(p.bc.chainConfig.IsEIP158(block.Number()))
+	//log.Info("最终性比对", "block", blockNumber, "header.root", block.Header().Root.Hex(), "root", root2.Hex())
 	return receipts, allLogs, *usedGas, nil
 }
 
@@ -435,8 +431,9 @@ func applyTransaction_new(txExtra *types.TxExtra, msg *Message, config *params.C
 
 	// Apply the transaction to the current state (included in the env).
 	result, err := ApplyMessage_new(txExtra, evm, msg, gp)
-	log.Info("appRes", "result", result, "refund", txExtra.GetRefund())
+	//log.Info("appRes", "result", result, "refund", txExtra.GetRefund())
 	if err != nil {
+		log.Error("ApplyMessage_new", "hash", tx.Hash().Hex(), "err", err)
 		return nil, err
 	}
 	// Update the state with pending changes.
@@ -448,7 +445,8 @@ func applyTransaction_new(txExtra *types.TxExtra, msg *Message, config *params.C
 		root = txExtra.PostStateRoot.Bytes()
 	}
 	//atomic.AddUint64(usedGas, result.UsedGas)
-	*usedGas += result.UsedGas
+	//log.Info("gas使用情况", "hash", tx.Hash(), "gas", result.UsedGas)
+	//*usedGas += result.UsedGas
 	// Create a new receipt for the transaction, storing the intermediate root and gas used
 	// by the tx.
 	receipt := &types.Receipt{Type: tx.Type(), PostState: root, CumulativeGasUsed: *usedGas}

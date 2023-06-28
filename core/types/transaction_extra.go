@@ -48,6 +48,8 @@ type TxExtra struct {
 
 	Hasher    crypto.KeccakState
 	HasherBuf common.Hash
+
+	Origin common.Address
 }
 
 func NewTxExtra(hash common.Hash) *TxExtra {
@@ -68,6 +70,7 @@ func NewTxExtra(hash common.Hash) *TxExtra {
 		Refund:           0,
 		MSuicide:         map[common.Address]bool{},
 		logs:             map[common.Hash][]*Log{},
+		Origin:           common.Address{},
 	}
 }
 
@@ -153,11 +156,16 @@ func (t *TxExtra) Copy() *TxExtra {
 			cpy.logs[hash] = append(cpy.logs[hash], l)
 		}
 	}
-
+	cpy.Origin = t.Origin
 	return cpy
 }
 
 func (t *TxExtra) Revert(snap *TxExtra) {
+	t.logs = make(map[common.Hash][]*Log)
+	t.Origin = snap.Origin
+	t.Refund = snap.Refund
+	t.PreState = make(map[common.Address]*StateAccount)
+
 	for address, account := range snap.PreState {
 		t.PreState[address] = &StateAccount{
 			Nonce:    account.Nonce,
@@ -215,16 +223,12 @@ func (t *TxExtra) Revert(snap *TxExtra) {
 	for address, b := range snap.MSuicide {
 		t.MSuicide[address] = b
 	}
-
-	t.logs = make(map[common.Hash][]*Log)
 	for hash, logs := range snap.logs {
 		t.logs[hash] = make([]*Log, len(logs))
 		for _, l := range logs {
 			t.logs[hash] = append(t.logs[hash], l)
 		}
 	}
-
-	t.Refund = snap.Refund
 }
 
 func (t *TxExtra) AddPreState(address common.Address, stateAccount *StateAccount) {
@@ -332,7 +336,7 @@ func (t *TxExtra) GetPostRootByAddress(address common.Address) common.Hash {
 	enc := t.PostState[address]
 	data := new(StateAccount)
 	if err := rlp.DecodeBytes(enc, data); err != nil {
-		log.Error("GetPostRootByAddress Failed to decode state object", "addr", address, "err", err)
+		//log.Error("GetPostRootByAddress Failed to decode state object", "addr", address, "err", err)
 		return EmptyRootHash
 	}
 	return data.Root
@@ -480,12 +484,15 @@ func (t *TxExtra) Empty(address common.Address) bool {
 }
 
 func (t *TxExtra) CreateAccount(address common.Address) {
-	t.AddPreState(address, &StateAccount{
-		Nonce:    0,
-		Balance:  new(big.Int),
-		Root:     emptyRoot,
-		CodeHash: emptyCodeHash,
-	})
+	s := t.PreState[address]
+	if s == nil {
+		t.AddPreState(address, &StateAccount{
+			Nonce:    0,
+			Balance:  new(big.Int),
+			Root:     emptyRoot,
+			CodeHash: emptyCodeHash,
+		})
+	}
 }
 
 func (t *TxExtra) AddLog(log *Log) {
@@ -512,17 +519,21 @@ func (t *TxExtra) Logs() []*Log {
 }
 
 func IsTxExtra(blockNumber *big.Int) bool {
-	fileInfo, err := os.Stat("/Users/yulin/eth/execution/pioneer/build/bin/minerExtra/" + blockNumber.String() + ".txt")
+	left := new(big.Int).Quo(blockNumber, new(big.Int).SetInt64(1000))
+	fileInfo, err := os.Stat("/Users/yulin/eth/execution/pioneer/build/bin/minerExtra/" + left.String() + "/" + blockNumber.String() + ".txt")
 	if os.IsNotExist(err) {
+		//log.Info("IsTxExtra", "err", err)
 		return false
 	}
 	if fileInfo.Size() == 0 {
+		log.Info("size0")
 		return false
 	}
 	return true
 }
 func ReadFileByHash(blockNumber *big.Int, hash common.Hash) *TxExtra {
-	myfile, err := os.Open("/Users/yulin/eth/execution/pioneer/build/bin/minerExtra/" + blockNumber.String() + ".txt") //open the file
+	left := new(big.Int).Quo(blockNumber, new(big.Int).SetInt64(1000))
+	myfile, err := os.Open("/Users/yulin/eth/execution/pioneer/build/bin/minerExtra/" + left.String() + "/" + blockNumber.String() + ".txt") //open the file
 	if err != nil {
 		log.Info("Test", "Error opening file:", err)
 		return nil
@@ -559,7 +570,7 @@ func ReadFileByHash(blockNumber *big.Int, hash common.Hash) *TxExtra {
 						//	Root:     emptyRoot,
 						//	CodeHash: emptyCodeHash,
 						//})
-						log.Error("ReadFileByHash Failed to decode state object", "addr", common.HexToAddress(lArr[1]), "err", err)
+						//log.Error("ReadFileByHash Failed to decode state object", "addr", common.HexToAddress(lArr[1]), "err", err)
 					} else {
 						txExtra.AddPreState(common.HexToAddress(lArr[1]), data)
 					}

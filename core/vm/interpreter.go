@@ -348,6 +348,7 @@ func (in *EVMInterpreter) Run_new(txExtra *types.TxExtra, contract *Contract, in
 			// cost is explicitly set so that the capture state defer method can get the proper cost
 			var dynamicCost uint64
 			dynamicCost, err = operation.dynamicGas(in.evm, contract, stack, mem, memorySize, txExtra)
+			//log.Info("dynamicCost", "hash", txExtra.TxHash.Hex(), "op", op, "dynamicCost", dynamicCost)
 			cost += dynamicCost // for tracing
 			if err != nil || !contract.UseGas(dynamicCost) {
 				return nil, ErrOutOfGas
@@ -365,6 +366,8 @@ func (in *EVMInterpreter) Run_new(txExtra *types.TxExtra, contract *Contract, in
 			logged = true
 		}
 		// execute the operation
+		//log.Info("cost", "hash", txExtra.TxHash.Hex(), "op", op, "Cost", cost)
+		//log.Info("opCode", "hash", txExtra.TxHash.Hex(), "op", op)
 		res, err = operation.execute(&pc, in, callContext, txExtra)
 		if err != nil {
 			break

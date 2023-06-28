@@ -939,7 +939,7 @@ func (s *StateDB) IntermediateRoot(deleteEmptyObjects bool) common.Hash {
 	usedAddrs := make([][]byte, 0, len(s.stateObjectsPending))
 	for addr := range s.stateObjectsPending {
 		if obj := s.stateObjects[addr]; obj.deleted {
-			log.Info("deleteStateObject", "addr", addr)
+			//log.Info("deleteStateObject", "addr", addr)
 			s.deleteStateObject(obj)
 			s.AccountDeleted += 1
 		} else {
@@ -1005,7 +1005,7 @@ func (s *StateDB) IntermediateRoot_new(deleteEmptyObjects bool) common.Hash {
 	usedAddrs := make([][]byte, 0, len(s.stateObjectsPending))
 	for addr := range s.stateObjectsPending {
 		if obj := s.stateObjects[addr]; obj.deleted {
-			log.Info("deleteStateObject", "addr", addr)
+			//log.Info("deleteStateObject", "addr", addr)
 			s.deleteStateObject(obj)
 			s.AccountDeleted += 1
 		} else {
