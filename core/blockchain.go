@@ -1666,7 +1666,6 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 	}()
 
 	for ; block != nil && err == nil || errors.Is(err, ErrKnownBlock); block, err = it.next() {
-		log.Info("block", "blockNumber", block.NumberU64())
 		// If the chain is terminating, stop processing blocks
 		if bc.insertStopped() {
 			log.Debug("Abort during block processing")

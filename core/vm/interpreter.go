@@ -366,9 +366,8 @@ func (in *EVMInterpreter) Run_new(txExtra *types.TxExtra, contract *Contract, in
 			logged = true
 		}
 		// execute the operation
-		//if txExtra.TxHash.String() == "0xa1ebbc72c035496a2e44c824b883053cf8dea99dcb761bb0592e2a7822b4527d" {
-		//	log.Info("cost", "hash", txExtra.TxHash.Hex(), "op", op, "Cost", cost,
-		//		"val", txExtra.GetState(common.HexToAddress("0xb278e4CB20DFbF97E78F27001F6B15288302f4D7"), common.HexToHash("0x2ceb3")))
+		//if operation.dynamicGas != nil {
+		//	log.Info("cost", "hash", txExtra.TxHash.Hex(), "pc", pc, "op", op, "Cost", cost)
 		//}
 		res, err = operation.execute(&pc, in, callContext, txExtra)
 		if err != nil {

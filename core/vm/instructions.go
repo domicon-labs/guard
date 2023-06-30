@@ -473,7 +473,7 @@ func opBlockhash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext, t
 	if overflow {
 		num.Clear()
 		if txExtra != nil {
-			log.Info("opCallDataLoad-overflow", "block", interpreter.evm.Context.BlockNumber, "hash", txExtra.TxHash.Hex(), "num", num.Hex())
+			log.Info("opBlockhash-overflow", "block", interpreter.evm.Context.BlockNumber, "hash", txExtra.TxHash.Hex(), "num", num.Hex())
 		}
 		return nil, nil
 	}
@@ -487,17 +487,17 @@ func opBlockhash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext, t
 	if num64 >= lower && num64 < upper {
 		num.SetBytes(interpreter.evm.Context.GetHash(num64).Bytes())
 		if txExtra != nil {
-			log.Info("opCallDataLoad-SetBytes", "block", interpreter.evm.Context.BlockNumber, "hash", txExtra.TxHash.Hex(), "num", num.Hex())
+			log.Info("opBlockhash-SetBytes", "block", interpreter.evm.Context.BlockNumber, "hash", txExtra.TxHash.Hex(), "num", num.Hex())
 		}
 	} else {
 		num.Clear()
 		if txExtra != nil {
-			log.Info("opCallDataLoad-Clear", "block", interpreter.evm.Context.BlockNumber, "hash", txExtra.TxHash.Hex(), "num", num.Hex())
+			log.Info("opBlockhash-Clear", "block", interpreter.evm.Context.BlockNumber, "hash", txExtra.TxHash.Hex(), "num", num.Hex())
 		}
 	}
 
 	if txExtra != nil {
-		log.Info("opCallDataLoad-end", "block", interpreter.evm.Context.BlockNumber, "hash", txExtra.TxHash.Hex(), "num", num.Hex())
+		log.Info("opBlockhash-end", "block", interpreter.evm.Context.BlockNumber, "hash", txExtra.TxHash.Hex(), "num", num.Hex())
 	}
 	return nil, nil
 }

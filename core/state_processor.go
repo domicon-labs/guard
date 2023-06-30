@@ -99,12 +99,12 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	} else {
 		//log.Info("new evm", "blockNumber", blockNumber.Uint64())
 		transactions := block.Transactions()
-		txChan := make(chan int, 2)
+		txChan := make(chan int, 5)
 
 		var wg sync.WaitGroup
 		wg.Add(len(transactions))
 		interruptCh := make(chan struct{})
-		for i := 0; i < 2; i++ {
+		for i := 0; i < 5; i++ {
 			go func() {
 				for {
 					select {
@@ -362,6 +362,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 				log.Info("transaction 后", "hash", transaction.Hash().Hex())
 			}
 		}
+		log.Info("blockNumber", "blockNumber", blockNumber)
 		//usedGas = pUseGas
 	}
 
@@ -372,10 +373,10 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	}
 	// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
 	p.engine.Finalize(p.bc, header, statedb, block.Transactions(), block.Uncles(), withdrawals)
-	if blockNumber.Uint64() == 246225 {
-		root2 := statedb.IntermediateRoot_new(p.bc.chainConfig.IsEIP158(block.Number()))
-		log.Info("查看Trie更改", "block", blockNumber, "header.root", block.Header().Root.Hex(), "root", root2.Hex())
-	}
+	//if blockNumber.Uint64() == 246225 {
+	//	root2 := statedb.IntermediateRoot_new(p.bc.chainConfig.IsEIP158(block.Number()))
+	//	log.Info("查看Trie更改", "block", blockNumber, "header.root", block.Header().Root.Hex(), "root", root2.Hex())
+	//}
 	//root2 := statedb.IntermediateRoot(p.bc.chainConfig.IsEIP158(block.Number()))
 	//log.Info("最终性比对", "block", blockNumber, "header.root", block.Header().Root.Hex(), "root", root2.Hex())
 	return receipts, allLogs, *usedGas, nil
