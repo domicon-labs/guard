@@ -49,7 +49,8 @@ type TxExtra struct {
 	Hasher    crypto.KeccakState
 	HasherBuf common.Hash
 
-	Origin common.Address
+	Origin   common.Address
+	GasPrice *big.Int
 }
 
 func NewTxExtra(hash common.Hash) *TxExtra {
@@ -71,6 +72,7 @@ func NewTxExtra(hash common.Hash) *TxExtra {
 		MSuicide:         map[common.Address]bool{},
 		logs:             map[common.Hash][]*Log{},
 		Origin:           common.Address{},
+		GasPrice:         new(big.Int).SetUint64(0),
 	}
 }
 

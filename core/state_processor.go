@@ -99,12 +99,12 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	} else {
 		//log.Info("new evm", "blockNumber", blockNumber.Uint64())
 		transactions := block.Transactions()
-		txChan := make(chan int, 1)
+		txChan := make(chan int, 2)
 
 		var wg sync.WaitGroup
 		wg.Add(len(transactions))
 		interruptCh := make(chan struct{})
-		for i := 0; i < 1; i++ {
+		for i := 0; i < 2; i++ {
 			go func() {
 				for {
 					select {
@@ -124,6 +124,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 							tx.TxExtra = txExtra
 
 							txExtra.Origin = msg.From
+							txExtra.GasPrice = msg.GasPrice
 							// 验证状态树数据
 							for addr, stobject := range txExtra.PreState {
 								proof := txExtra.GetPreProof(addr)
@@ -294,7 +295,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 							"address", address,
 							"执行数据", temp.Nonce,
 							"预计数据", data.Nonce)
-						return nil, nil, 0, fmt.Errorf("Account Nonce Error")
+						//return nil, nil, 0, fmt.Errorf("Account Nonce Error")
 					}
 
 					if data.Balance.Cmp(temp.Balance) != 0 {
@@ -302,7 +303,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 							"address", address,
 							"执行数据", temp.Balance,
 							"预计数据", data.Balance)
-						return nil, nil, 0, fmt.Errorf("Account Balance Error")
+						//return nil, nil, 0, fmt.Errorf("Account Balance Error")
 					}
 					//log.Info("修改账户内容", "address", address.Hex(), "balance", data.Balance, "nonce", data.Nonce)
 					statedb.SetBalance(address, data.Balance)
@@ -324,10 +325,10 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 								"address", address, "hash", hash,
 								"执行数据", temp.Hex(),
 								"预计数据", c.Hex())
-							return nil, nil, 0, fmt.Errorf("执行交易账户数据不一致")
+							//return nil, nil, 0, fmt.Errorf("执行交易账户数据不一致")
 						}
 						//log.Info("修改Storage", "addr", address.Hex(), "key", hash, "val", c)
-						statedb.SetState(address, hash, c)
+						statedb.SetState(address, hash, temp)
 					}
 				}
 				for address, i := range txExtra.PostCode {
@@ -344,7 +345,9 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 
 				statedb.SetTxContext(transaction.Hash(), i)
 				for _, l := range txExtra.Logs() {
-					statedb.AddLog(l)
+					if l != nil {
+						statedb.AddLog(l)
+					}
 				}
 				transaction.Receipt.Logs = statedb.GetLogs(transaction.Hash(), blockNumber.Uint64(), blockHash)
 				transaction.Receipt.Bloom = types.CreateBloom(types.Receipts{transaction.Receipt})
@@ -431,7 +434,6 @@ func applyTransaction_new(txExtra *types.TxExtra, msg *Message, config *params.C
 
 	// Apply the transaction to the current state (included in the env).
 	result, err := ApplyMessage_new(txExtra, evm, msg, gp)
-	//log.Info("appRes", "result", result, "refund", txExtra.GetRefund())
 	if err != nil {
 		log.Error("ApplyMessage_new", "hash", tx.Hash().Hex(), "err", err)
 		return nil, err

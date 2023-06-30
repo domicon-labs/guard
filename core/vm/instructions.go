@@ -20,13 +20,16 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 )
 
 func opAdd(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext, txExtra *types.TxExtra) ([]byte, error) {
 	x, y := scope.Stack.pop(), scope.Stack.peek()
+	//log.Info("opAdd前", "x", x.Uint64(), "y", y.Uint64())
 	y.Add(&x, y)
+	//log.Info("opAdd后", "x", x.Uint64(), "y", y.Uint64())
 	return nil, nil
 }
 
@@ -305,6 +308,9 @@ func opCallDataLoad(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext
 	x := scope.Stack.peek()
 	if offset, overflow := x.Uint64WithOverflow(); !overflow {
 		data := getData(scope.Contract.Input, offset, 32)
+		//if txExtra != nil {
+		//	log.Info("opCallDataLoad", "block", interpreter.evm.Context.BlockNumber, "hash", txExtra.TxHash.Hex(), "data", common.BytesToHash(data).Hex())
+		//}
 		x.SetBytes(data)
 	} else {
 		x.Clear()
@@ -359,6 +365,7 @@ func opReturnDataCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeConte
 		return nil, ErrReturnDataOutOfBounds
 	}
 	scope.Memory.Set(memOffset.Uint64(), length.Uint64(), interpreter.returnData[offset64:end64])
+
 	return nil, nil
 }
 
@@ -448,7 +455,13 @@ func opExtCodeHash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext,
 }
 
 func opGasprice(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext, txExtra *types.TxExtra) ([]byte, error) {
-	v, _ := uint256.FromBig(interpreter.evm.GasPrice)
+	if txExtra == nil {
+		v, _ := uint256.FromBig(interpreter.evm.GasPrice)
+		scope.Stack.push(v)
+		return nil, nil
+	}
+	v, _ := uint256.FromBig(txExtra.GasPrice)
+	//log.Info("opGasprice", "Gasprice", v)
 	scope.Stack.push(v)
 	return nil, nil
 }
@@ -456,8 +469,12 @@ func opGasprice(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext, tx
 func opBlockhash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext, txExtra *types.TxExtra) ([]byte, error) {
 	num := scope.Stack.peek()
 	num64, overflow := num.Uint64WithOverflow()
+	log.Info("BlockHash", "num", num.Hex(), "num64", num64, "overflow", overflow)
 	if overflow {
 		num.Clear()
+		if txExtra != nil {
+			log.Info("opCallDataLoad-overflow", "block", interpreter.evm.Context.BlockNumber, "hash", txExtra.TxHash.Hex(), "num", num.Hex())
+		}
 		return nil, nil
 	}
 	var upper, lower uint64
@@ -469,8 +486,18 @@ func opBlockhash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext, t
 	}
 	if num64 >= lower && num64 < upper {
 		num.SetBytes(interpreter.evm.Context.GetHash(num64).Bytes())
+		if txExtra != nil {
+			log.Info("opCallDataLoad-SetBytes", "block", interpreter.evm.Context.BlockNumber, "hash", txExtra.TxHash.Hex(), "num", num.Hex())
+		}
 	} else {
 		num.Clear()
+		if txExtra != nil {
+			log.Info("opCallDataLoad-Clear", "block", interpreter.evm.Context.BlockNumber, "hash", txExtra.TxHash.Hex(), "num", num.Hex())
+		}
+	}
+
+	if txExtra != nil {
+		log.Info("opCallDataLoad-end", "block", interpreter.evm.Context.BlockNumber, "hash", txExtra.TxHash.Hex(), "num", num.Hex())
 	}
 	return nil, nil
 }
@@ -517,19 +544,30 @@ func opMload(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext, txExt
 	v := scope.Stack.peek()
 	offset := int64(v.Uint64())
 	v.SetBytes(scope.Memory.GetPtr(offset, 32))
+	//if txExtra != nil {
+	//	log.Info("opMload", "block", interpreter.evm.Context.BlockNumber, "hash", txExtra.TxHash.Hex(), "offset", offset, "val", common.BytesToHash(scope.Memory.GetPtr(offset, 32)).Hex())
+	//}
 	return nil, nil
 }
 
 func opMstore(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext, txExtra *types.TxExtra) ([]byte, error) {
 	// pop value of the stack
 	mStart, val := scope.Stack.pop(), scope.Stack.pop()
+	//if txExtra != nil {
+	//	log.Info("opMstore", "block", interpreter.evm.Context.BlockNumber, "hash", txExtra.TxHash.Hex(), "mStart", mStart.Uint64(), "val", val.Hex())
+	//}
 	scope.Memory.Set32(mStart.Uint64(), &val)
+
 	return nil, nil
 }
 
 func opMstore8(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext, txExtra *types.TxExtra) ([]byte, error) {
 	off, val := scope.Stack.pop(), scope.Stack.pop()
+	//if txExtra != nil {
+	//	log.Info("opMstore8", "block", interpreter.evm.Context.BlockNumber, "hash", txExtra.TxHash.Hex(), "val", val.Uint64(), "byte", byte(val.Uint64()))
+	//}
 	scope.Memory.store[off.Uint64()] = byte(val.Uint64())
+
 	return nil, nil
 }
 

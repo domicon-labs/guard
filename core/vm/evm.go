@@ -479,6 +479,47 @@ func (evm *EVM) DelegateCall(caller ContractRef, addr common.Address, input []by
 	return ret, gas, err
 }
 
+func (evm *EVM) DelegateCall_new(txExtra *types.TxExtra, caller ContractRef, addr common.Address, input []byte, gas uint64) (ret []byte, leftOverGas uint64, err error) {
+	// Fail if we're trying to execute above the call depth limit
+	if evm.depth > int(params.CallCreateDepth) {
+		return nil, gas, ErrDepth
+	}
+	//var snapshot = evm.StateDB.Snapshot()
+	snap := txExtra.Copy()
+
+	// Invoke tracer hooks that signal entering/exiting a call frame
+	if evm.Config.Tracer != nil {
+		// NOTE: caller must, at all times be a contract. It should never happen
+		// that caller is something other than a Contract.
+		parent := caller.(*Contract)
+		// DELEGATECALL inherits value from parent call
+		evm.Config.Tracer.CaptureEnter(DELEGATECALL, caller.Address(), addr, input, gas, parent.value)
+		defer func(startGas uint64) {
+			evm.Config.Tracer.CaptureExit(ret, startGas-gas, err)
+		}(gas)
+	}
+
+	// It is allowed to call precompiles, even via delegatecall
+	if p, isPrecompile := evm.precompile(addr); isPrecompile {
+		ret, gas, err = RunPrecompiledContract(p, input, gas)
+	} else {
+		addrCopy := addr
+		// Initialise a new contract and make initialise the delegate values
+		contract := NewContract(caller, AccountRef(caller.Address()), nil, gas).AsDelegate()
+		contract.SetCallCode(&addrCopy, txExtra.GetCodeHash(addrCopy), txExtra.GetCode(addrCopy))
+		ret, err = evm.interpreter.Run_new(txExtra, contract, input, false)
+		gas = contract.Gas
+	}
+	if err != nil {
+		//evm.StateDB.RevertToSnapshot(snapshot)
+		txExtra.Revert(snap)
+		if err != ErrExecutionReverted {
+			gas = 0
+		}
+	}
+	return ret, gas, err
+}
+
 // StaticCall executes the contract associated with the addr with the given input
 // as parameters while disallowing any modifications to the state during the call.
 // Opcodes that attempt to perform such modifications will result in exceptions
