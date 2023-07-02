@@ -461,18 +461,38 @@ func gasCall(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize
 		if transfersValue {
 			gas += params.CallValueTransferGas
 		}
-	} else {
-		if evm.chainRules.IsEIP158 {
-			if transfersValue && txExtra.Empty(address) {
-				gas += params.CallNewAccountGas
-			}
-		} else if !txExtra.Exist(address) {
+
+		memoryGas, err := memoryGasCost(mem, memorySize)
+		if err != nil {
+			return 0, err
+		}
+		var overflow bool
+		if gas, overflow = math.SafeAdd(gas, memoryGas); overflow {
+			return 0, ErrGasUintOverflow
+		}
+
+		evm.callGasTemp, err = callGas(evm.chainRules.IsEIP150, contract.Gas, gas, stack.Back(0))
+		if err != nil {
+			return 0, err
+		}
+		if gas, overflow = math.SafeAdd(gas, evm.callGasTemp); overflow {
+			return 0, ErrGasUintOverflow
+		}
+
+		//log.Info("gasCall", "gas", gas, "memoryGas", memoryGas)
+		return gas, nil
+	}
+	if evm.chainRules.IsEIP158 {
+		if transfersValue && txExtra.Empty(address) {
 			gas += params.CallNewAccountGas
 		}
-		if transfersValue {
-			gas += params.CallValueTransferGas
-		}
+	} else if !txExtra.Exist(address) {
+		gas += params.CallNewAccountGas
 	}
+	if transfersValue {
+		gas += params.CallValueTransferGas
+	}
+
 	memoryGas, err := memoryGasCost(mem, memorySize)
 	if err != nil {
 		return 0, err
@@ -482,13 +502,15 @@ func gasCall(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize
 		return 0, ErrGasUintOverflow
 	}
 
-	evm.callGasTemp, err = callGas(evm.chainRules.IsEIP150, contract.Gas, gas, stack.Back(0))
+	txExtra.CallGasTemp, err = callGas(evm.chainRules.IsEIP150, contract.Gas, gas, stack.Back(0))
 	if err != nil {
 		return 0, err
 	}
-	if gas, overflow = math.SafeAdd(gas, evm.callGasTemp); overflow {
+	if gas, overflow = math.SafeAdd(gas, txExtra.CallGasTemp); overflow {
 		return 0, ErrGasUintOverflow
 	}
+
+	//log.Info("gasCall", "gas", gas, "memoryGas", memoryGas)
 	return gas, nil
 }
 
@@ -507,11 +529,22 @@ func gasCallCode(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memory
 	if gas, overflow = math.SafeAdd(gas, memoryGas); overflow {
 		return 0, ErrGasUintOverflow
 	}
-	evm.callGasTemp, err = callGas(evm.chainRules.IsEIP150, contract.Gas, gas, stack.Back(0))
+	if txExtra == nil {
+		evm.callGasTemp, err = callGas(evm.chainRules.IsEIP150, contract.Gas, gas, stack.Back(0))
+		if err != nil {
+			return 0, err
+		}
+		if gas, overflow = math.SafeAdd(gas, evm.callGasTemp); overflow {
+			return 0, ErrGasUintOverflow
+		}
+		return gas, nil
+	}
+
+	txExtra.CallGasTemp, err = callGas(evm.chainRules.IsEIP150, contract.Gas, gas, stack.Back(0))
 	if err != nil {
 		return 0, err
 	}
-	if gas, overflow = math.SafeAdd(gas, evm.callGasTemp); overflow {
+	if gas, overflow = math.SafeAdd(gas, txExtra.CallGasTemp); overflow {
 		return 0, ErrGasUintOverflow
 	}
 	return gas, nil
@@ -522,12 +555,24 @@ func gasDelegateCall(evm *EVM, contract *Contract, stack *Stack, mem *Memory, me
 	if err != nil {
 		return 0, err
 	}
-	evm.callGasTemp, err = callGas(evm.chainRules.IsEIP150, contract.Gas, gas, stack.Back(0))
+	if txExtra == nil {
+		evm.callGasTemp, err = callGas(evm.chainRules.IsEIP150, contract.Gas, gas, stack.Back(0))
+		if err != nil {
+			return 0, err
+		}
+		var overflow bool
+		if gas, overflow = math.SafeAdd(gas, evm.callGasTemp); overflow {
+			return 0, ErrGasUintOverflow
+		}
+		return gas, nil
+	}
+
+	txExtra.CallGasTemp, err = callGas(evm.chainRules.IsEIP150, contract.Gas, gas, stack.Back(0))
 	if err != nil {
 		return 0, err
 	}
 	var overflow bool
-	if gas, overflow = math.SafeAdd(gas, evm.callGasTemp); overflow {
+	if gas, overflow = math.SafeAdd(gas, txExtra.CallGasTemp); overflow {
 		return 0, ErrGasUintOverflow
 	}
 	return gas, nil
@@ -538,12 +583,24 @@ func gasStaticCall(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memo
 	if err != nil {
 		return 0, err
 	}
-	evm.callGasTemp, err = callGas(evm.chainRules.IsEIP150, contract.Gas, gas, stack.Back(0))
+	if txExtra == nil {
+		evm.callGasTemp, err = callGas(evm.chainRules.IsEIP150, contract.Gas, gas, stack.Back(0))
+		if err != nil {
+			return 0, err
+		}
+		var overflow bool
+		if gas, overflow = math.SafeAdd(gas, evm.callGasTemp); overflow {
+			return 0, ErrGasUintOverflow
+		}
+		return gas, nil
+	}
+
+	txExtra.CallGasTemp, err = callGas(evm.chainRules.IsEIP150, contract.Gas, gas, stack.Back(0))
 	if err != nil {
 		return 0, err
 	}
 	var overflow bool
-	if gas, overflow = math.SafeAdd(gas, evm.callGasTemp); overflow {
+	if gas, overflow = math.SafeAdd(gas, txExtra.CallGasTemp); overflow {
 		return 0, ErrGasUintOverflow
 	}
 	return gas, nil

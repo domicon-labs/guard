@@ -51,6 +51,8 @@ type TxExtra struct {
 
 	Origin   common.Address
 	GasPrice *big.Int
+
+	CallGasTemp uint64
 }
 
 func NewTxExtra(hash common.Hash) *TxExtra {

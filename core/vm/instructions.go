@@ -20,7 +20,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 )
@@ -469,12 +468,8 @@ func opGasprice(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext, tx
 func opBlockhash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext, txExtra *types.TxExtra) ([]byte, error) {
 	num := scope.Stack.peek()
 	num64, overflow := num.Uint64WithOverflow()
-	log.Info("BlockHash", "num", num.Hex(), "num64", num64, "overflow", overflow)
 	if overflow {
 		num.Clear()
-		if txExtra != nil {
-			log.Info("opBlockhash-overflow", "block", interpreter.evm.Context.BlockNumber, "hash", txExtra.TxHash.Hex(), "num", num.Hex())
-		}
 		return nil, nil
 	}
 	var upper, lower uint64
@@ -486,18 +481,8 @@ func opBlockhash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext, t
 	}
 	if num64 >= lower && num64 < upper {
 		num.SetBytes(interpreter.evm.Context.GetHash(num64).Bytes())
-		if txExtra != nil {
-			log.Info("opBlockhash-SetBytes", "block", interpreter.evm.Context.BlockNumber, "hash", txExtra.TxHash.Hex(), "num", num.Hex())
-		}
 	} else {
 		num.Clear()
-		if txExtra != nil {
-			log.Info("opBlockhash-Clear", "block", interpreter.evm.Context.BlockNumber, "hash", txExtra.TxHash.Hex(), "num", num.Hex())
-		}
-	}
-
-	if txExtra != nil {
-		log.Info("opBlockhash-end", "block", interpreter.evm.Context.BlockNumber, "hash", txExtra.TxHash.Hex(), "num", num.Hex())
 	}
 	return nil, nil
 }
@@ -757,7 +742,12 @@ func opCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext, txExtr
 	// Pop gas. The actual gas in interpreter.evm.callGasTemp.
 	// We can use this as a temporary value
 	temp := stack.pop()
-	gas := interpreter.evm.callGasTemp
+	var gas uint64
+	if txExtra == nil {
+		gas = interpreter.evm.callGasTemp
+	} else {
+		gas = txExtra.CallGasTemp
+	}
 	// Pop other call parameters.
 	addr, value, inOffset, inSize, retOffset, retSize := stack.pop(), stack.pop(), stack.pop(), stack.pop(), stack.pop(), stack.pop()
 	toAddr := common.Address(addr.Bytes20())
@@ -788,6 +778,7 @@ func opCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext, txExtr
 		//	"toAddr", toAddr.Hex(),
 		//	"args", args, "gas", gas, "bigVal", bigVal)
 		ret, returnGas, err = interpreter.evm.Call_new(txExtra, scope.Contract, toAddr, args, gas, bigVal)
+		//log.Info("opCall", "hash", txExtra.TxHash.Hex(), "from", scope.Contract.Address().Hex(), "to", toAddr.Hex(), "returnGas", returnGas)
 	}
 
 	if err != nil {
@@ -810,7 +801,12 @@ func opCallCode(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext, tx
 	stack := scope.Stack
 	// We use it as a temporary value
 	temp := stack.pop()
-	gas := interpreter.evm.callGasTemp
+	var gas uint64
+	if txExtra == nil {
+		gas = interpreter.evm.callGasTemp
+	} else {
+		gas = txExtra.CallGasTemp
+	}
 	// Pop other call parameters.
 	addr, value, inOffset, inSize, retOffset, retSize := stack.pop(), stack.pop(), stack.pop(), stack.pop(), stack.pop(), stack.pop()
 	toAddr := common.Address(addr.Bytes20())
@@ -854,7 +850,12 @@ func opDelegateCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext
 	// Pop gas. The actual gas is in interpreter.evm.callGasTemp.
 	// We use it as a temporary value
 	temp := stack.pop()
-	gas := interpreter.evm.callGasTemp
+	var gas uint64
+	if txExtra == nil {
+		gas = interpreter.evm.callGasTemp
+	} else {
+		gas = txExtra.CallGasTemp
+	}
 	// Pop other call parameters.
 	addr, inOffset, inSize, retOffset, retSize := stack.pop(), stack.pop(), stack.pop(), stack.pop(), stack.pop()
 	toAddr := common.Address(addr.Bytes20())
@@ -882,7 +883,12 @@ func opStaticCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext, 
 	stack := scope.Stack
 	// We use it as a temporary value
 	temp := stack.pop()
-	gas := interpreter.evm.callGasTemp
+	var gas uint64
+	if txExtra == nil {
+		gas = interpreter.evm.callGasTemp
+	} else {
+		gas = txExtra.CallGasTemp
+	}
 	// Pop other call parameters.
 	addr, inOffset, inSize, retOffset, retSize := stack.pop(), stack.pop(), stack.pop(), stack.pop(), stack.pop()
 	toAddr := common.Address(addr.Bytes20())

@@ -366,8 +366,8 @@ func (in *EVMInterpreter) Run_new(txExtra *types.TxExtra, contract *Contract, in
 			logged = true
 		}
 		// execute the operation
-		//if operation.dynamicGas != nil {
-		//	log.Info("cost", "hash", txExtra.TxHash.Hex(), "pc", pc, "op", op, "Cost", cost)
+		//if in.evm.Context.BlockNumber.Uint64() > 400000 {
+		//	log.Info("cost", "block", in.evm.Context.BlockNumber, "hash", txExtra.TxHash.Hex(), "pc", pc, "op", op, "Cost", cost, "gas", contract.Gas)
 		//}
 		res, err = operation.execute(&pc, in, callContext, txExtra)
 		if err != nil {
