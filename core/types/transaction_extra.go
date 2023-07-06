@@ -535,6 +535,118 @@ func IsTxExtra(blockNumber *big.Int) bool {
 	}
 	return true
 }
+
+func ReadFile(blockNumber *big.Int, count int) map[common.Hash]*TxExtra {
+	left := new(big.Int).Quo(blockNumber, new(big.Int).SetInt64(1000))
+	myfile, err := os.Open("/Users/yulin/eth/execution/pioneer/build/bin/minerExtra/" + left.String() + "/" + blockNumber.String() + ".txt") //open the file
+	if err != nil {
+		log.Error("ReadFile", "Error opening file:", err)
+		return nil
+	}
+	defer myfile.Close()
+	scanner := bufio.NewScanner(myfile)
+	start := false
+	re := make(map[common.Hash]*TxExtra, count)
+
+	var tempTxExtra *TxExtra
+	for scanner.Scan() {
+		line := scanner.Text()
+		lArr := strings.Split(line, "\t")
+		stype := lArr[0]
+
+		if start {
+			if stype == "txHash" {
+				start = false
+				re[tempTxExtra.TxHash] = tempTxExtra
+				continue
+			}
+			switch stype {
+			case "preStateRoot":
+				tempTxExtra.PreStateRoot = common.HexToHash(lArr[1])
+			case "postStateRoot":
+				tempTxExtra.PostStateRoot = common.HexToHash(lArr[1])
+			case "code":
+				//if c, err := base64.StdEncoding.DecodeString(lArr[2]); err == nil {
+				//	txExtra.AddCode(common.HexToAddress(lArr[1]), c)
+				//}
+			case "preState":
+				if enc, err := base64.StdEncoding.DecodeString(lArr[2]); err == nil {
+					data := new(StateAccount)
+					if err := rlp.DecodeBytes(enc, data); err != nil {
+						//txExtra.AddPreState(common.HexToAddress(lArr[1]), &StateAccount{
+						//	Nonce:    0,
+						//	Balance:  new(big.Int),
+						//	Root:     emptyRoot,
+						//	CodeHash: emptyCodeHash,
+						//})
+						//log.Error("ReadFileByHash Failed to decode state object", "addr", common.HexToAddress(lArr[1]), "err", err)
+					} else {
+						tempTxExtra.AddPreState(common.HexToAddress(lArr[1]), data)
+					}
+				}
+			case "postState":
+				if c, err := base64.StdEncoding.DecodeString(lArr[2]); err == nil {
+					tempTxExtra.AddPostState(common.HexToAddress(lArr[1]), c)
+				}
+			case "preStateProof":
+				var path [][]byte
+				for _, s := range lArr[2:] {
+					if c, err := base64.StdEncoding.DecodeString(s); err == nil {
+						path = append(path, c)
+					}
+				}
+				tempTxExtra.AddPreStateProof(common.HexToAddress(lArr[1]), path)
+			case "postStateProof":
+				var path [][]byte
+				for _, s := range lArr[2:] {
+					if c, err := base64.StdEncoding.DecodeString(s); err == nil {
+						path = append(path, c)
+					}
+				}
+				tempTxExtra.AddPostStateProof(common.HexToAddress(lArr[1]), path)
+			case "preStorage":
+				//log.Info("preStorage", "address", lArr[1], "hash", lArr[2], "val", lArr[3])
+				tempTxExtra.AddPreStorage(common.HexToAddress(lArr[1]), common.HexToHash(lArr[2]), common.HexToHash(lArr[3]))
+				//log.Info("preStorage", "extra.PreStorage", extraData.PreStorageData.List)
+			case "postStorage":
+				//log.Info("postStorage", "address", lArr[1], "hash", lArr[2], "val", lArr[3])
+				tempTxExtra.AddPostStorage(common.HexToAddress(lArr[1]), common.HexToHash(lArr[2]), common.HexToHash(lArr[3]))
+			case "preStorageProof":
+				var path [][]byte
+				for _, s := range lArr[3:] {
+					if c, err := base64.StdEncoding.DecodeString(s); err == nil {
+						path = append(path, c)
+					}
+				}
+				tempTxExtra.AddPreStorageProof(common.HexToAddress(lArr[1]), common.HexToHash(lArr[2]), path)
+			case "postStorageProof":
+				var path [][]byte
+				for _, s := range lArr[3:] {
+					if c, err := base64.StdEncoding.DecodeString(s); err == nil {
+						path = append(path, c)
+					}
+				}
+				tempTxExtra.AddPostStorageProof(common.HexToAddress(lArr[1]), common.HexToHash(lArr[2]), path)
+
+			case "preCode":
+				if c, err := base64.StdEncoding.DecodeString(lArr[2]); err == nil {
+					tempTxExtra.AddPreCode(common.HexToAddress(lArr[1]), c)
+				}
+			case "postCode":
+				if c, err := base64.StdEncoding.DecodeString(lArr[2]); err == nil {
+					tempTxExtra.AddPostCode(common.HexToAddress(lArr[1]), c)
+				}
+			default:
+			}
+		}
+		if stype == "txHash" {
+			tempTxExtra = NewTxExtra(common.HexToHash(lArr[1]))
+			start = true
+		}
+	}
+	return re
+}
+
 func ReadFileByHash(blockNumber *big.Int, hash common.Hash) *TxExtra {
 	left := new(big.Int).Quo(blockNumber, new(big.Int).SetInt64(1000))
 	myfile, err := os.Open("/Users/yulin/eth/execution/pioneer/build/bin/minerExtra/" + left.String() + "/" + blockNumber.String() + ".txt") //open the file

@@ -17,7 +17,6 @@
 package core
 
 import (
-	"github.com/ethereum/go-ethereum/log"
 	"math/big"
 	"sync"
 
@@ -88,7 +87,6 @@ func GetHashFn(ref *types.Header, chain ChainContext) func(n uint64) common.Hash
 	var mu sync.Mutex
 
 	return func(n uint64) common.Hash {
-		log.Info("GetHashFn")
 		mu.Lock()
 		defer mu.Unlock()
 		if ref.Number.Uint64() <= n {

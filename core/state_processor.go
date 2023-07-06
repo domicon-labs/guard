@@ -17,7 +17,6 @@
 package core
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"github.com/ethereum/go-ethereum/common"
@@ -29,10 +28,9 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/ethereum/go-ethereum/trie"
 	"math/big"
 	"sync"
+	"time"
 )
 
 // StateProcessor is a basic Processor, which takes care of transitioning
@@ -81,6 +79,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		signer  = types.MakeSigner(p.config, header.Number, header.Time)
 	)
 	if !types.IsTxExtra(blockNumber) {
+		time1 := time.Now()
 		// Iterate over and process the individual transactions
 		for i, tx := range block.Transactions() {
 			msg, err := TransactionToMessage(tx, signer, header.BaseFee)
@@ -94,17 +93,24 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 			}
 			receipts = append(receipts, receipt)
 			allLogs = append(allLogs, receipt.Logs...)
-			log.Info("Process", "hash", tx.Hash().Hex(), "receipts", receipt)
 		}
+		time2 := time.Now()
+		elapsedTime := time2.Sub(time1)
+		log.Info("EVM", "blockNumber", blockNumber, "sum", elapsedTime)
 	} else {
 		//log.Info("new evm", "blockNumber", blockNumber.Uint64())
+		time1 := time.Now()
 		transactions := block.Transactions()
-		txChan := make(chan int, 5)
+
+		file := types.ReadFile(blockNumber, len(block.Transactions()))
+		time2 := time.Now()
+		//log.Info("文件测试", "test", test)
+		txChan := make(chan int, 10)
 
 		var wg sync.WaitGroup
 		wg.Add(len(transactions))
 		interruptCh := make(chan struct{})
-		for i := 0; i < 5; i++ {
+		for i := 0; i < 10; i++ {
 			go func() {
 				for {
 					select {
@@ -119,126 +125,13 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 						}
 
 						// txExtra
-						txExtra := types.ReadFileByHash(blockNumber, tx.Hash())
+						//txExtra := types.ReadFileByHash(blockNumber, tx.Hash())
+						txExtra := file[tx.Hash()]
 						if txExtra != nil {
 							tx.TxExtra = txExtra
 
 							txExtra.Origin = msg.From
 							txExtra.GasPrice = msg.GasPrice
-							// 验证状态树数据
-							for addr, stobject := range txExtra.PreState {
-								proof := txExtra.GetPreProof(addr)
-								value, err := trie.VerifyProof(txExtra.PreStateRoot, crypto.Keccak256(addr.Bytes()), proof)
-								if err != nil {
-									log.Error("pre数据验证错误", "blockNumber", blockNumber, "txHash", tx.Hash(), "address", addr, "root", txExtra.PreStateRoot, "key", crypto.Keccak256(addr.Bytes()), "proof", proof, "err", err)
-									wg.Done()
-									continue
-								}
-								bz, err := rlp.EncodeToBytes(&stobject)
-								if err != nil {
-									log.Error("pre数据转换错误", "blockNumber", blockNumber, "txHash", tx.Hash(), "address", addr)
-									wg.Done()
-									continue
-								}
-								if len(value) != 0 && !bytes.Equal(bz, value) {
-									log.Error("pre数据比对错误", "blockNumber", blockNumber, "txHash", tx.Hash(), "address", addr, "value", value, "bz", bz)
-									wg.Done()
-									continue
-								}
-								//log.Info("Account", "hash", tx.Hash().Hex(), "addr", addr, "stobject", stobject)
-							}
-
-							for addr, bz := range txExtra.PostState {
-								proof := txExtra.GetPostProof(addr)
-								value, err := trie.VerifyProof(txExtra.PostStateRoot, crypto.Keccak256(addr.Bytes()), proof)
-								if err != nil {
-									log.Error("post数据验证错误", "blockNumber", blockNumber, "txHash", tx.Hash(), "address", addr)
-									wg.Done()
-									continue
-								}
-								if !bytes.Equal(bz, value) {
-									log.Error("post数据比对错误", "blockNumber", blockNumber, "txHash", tx.Hash(), "address", addr)
-									wg.Done()
-									continue
-								}
-							}
-
-							for addr, data := range txExtra.PreStorage {
-								for hash, _ := range data {
-									//log.Info("proof", "addr", addr, "data", txExtra.PreStorageProof[addr])
-									proof := txExtra.GetPreStorageProof(addr, hash)
-									root := txExtra.GetPreRootByAddress(addr)
-
-									//log.Info("PreStorageInfo", "hash", txExtra.TxHash.Hex(), "addr", addr.Hex(), "hash", hash.Hex(),
-									//	"val", c.Hex(), "proof", proof)
-									if root == (common.Hash{}) || root == types.EmptyRootHash {
-										continue
-									}
-									_, err := trie.VerifyProof(root, crypto.Keccak256(hash.Bytes()), proof)
-									if err != nil {
-										//log.Info("txExtra", "hash", tx.Hash().Hex(), "addr", addr, "key", hash.Hex(), "c", c, "value", value)
-
-										log.Error("preStorage数据验证错误", "blockNumber", blockNumber, "txHash", tx.Hash(), "address", addr, "root", root, "key", hash.Hex(), "proof", proof, "err", err)
-										wg.Done()
-										continue
-									}
-									//if !bytes.Equal(c.Bytes(), common.BytesToHash(value).Bytes()) {
-									//	log.Info("string测试", "string(c)", string(c.Bytes()), "string(value)", string(common.BytesToHash(value).Bytes()))
-									//	log.Error("preStorage数据比对错误", "blockNumber", blockNumber, "txHash", tx.Hash(), "key", hash.Hex(), "c", c.Hex(), "value", value)
-									//	wg.Done()
-									//	continue
-									//}
-								}
-							}
-
-							for addr, data := range txExtra.PostStorage {
-								for hash, _ := range data {
-									proof := txExtra.GetPostStorageProof(addr, hash)
-									root := txExtra.GetPostRootByAddress(addr)
-									if root == types.EmptyRootHash {
-										continue
-									}
-									_, err := trie.VerifyProof(root, crypto.Keccak256(hash.Bytes()), proof)
-									if err != nil {
-										log.Error("postStorage数据验证错误", "blockNumber", blockNumber, "txHash", tx.Hash(), "address", addr)
-										wg.Done()
-										continue
-									}
-									//if !bytes.Equal(c.Bytes(), common.BytesToHash(value).Bytes()) {
-									//	log.Error("postStorage数据比对错误", "blockNumber", blockNumber, "txHash", tx.Hash(), "address", addr)
-									//	wg.Done()
-									//	continue
-									//}
-								}
-							}
-
-							for address, code := range txExtra.PreCode {
-								codeHash := txExtra.GetPreCodeHashByAddress(address)
-								if codeHash == nil || bytes.Equal(codeHash, types.EmptyCodeHash.Bytes()) {
-									continue
-								}
-								if crypto.Keccak256Hash(code) != common.BytesToHash(codeHash) {
-									if err != nil {
-										log.Error("PreCode数据验证错误", "blockNumber", blockNumber, "txHash", tx.Hash(), "address", address)
-										wg.Done()
-										continue
-									}
-								}
-							}
-
-							for address, code := range txExtra.PostCode {
-								codeHash := txExtra.GetPostCodeHashByAddress(address)
-								if bytes.Equal(codeHash, types.EmptyCodeHash.Bytes()) {
-									continue
-								}
-								if crypto.Keccak256Hash(code) != common.BytesToHash(codeHash) {
-									if err != nil {
-										log.Error("PostCode数据验证错误", "blockNumber", blockNumber, "txHash", tx.Hash(), "address", address)
-										wg.Done()
-										continue
-									}
-								}
-							}
 
 							statedb.SetTxContext(tx.Hash(), txIndex)
 							receipt, err := applyTransaction_new(txExtra, msg, p.config, gp, statedb, blockNumber, blockHash, tx, usedGas, vmenv)
@@ -248,9 +141,8 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 								continue
 							}
 							tx.Receipt = receipt
-							wg.Done()
 						}
-
+						wg.Done()
 					case <-interruptCh:
 						// If block precaching was interrupted, abort
 						return
@@ -269,78 +161,33 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		}
 		wg.Wait()
 		close(interruptCh)
-		//pUseGas := new(uint64)
 		for i, transaction := range block.Transactions() {
 			if transaction.TxExtra != nil {
 				txExtra := transaction.TxExtra
-				//if txExtra.TxHash.String() == "0x6c929e1c3d860ee225d7f3a7addf9e3f740603d243260536dfa2f3cf02b51de4" {
-				//	log.Info("测试中间根", "root", statedb.IntermediateRoot(p.config.IsEIP158(blockNumber)).Hex(),
-				//		"txExtraRoot", txExtra.PreStateRoot.Hex())
-				//}
-				for address, enc := range txExtra.PostState {
-					data := new(types.StateAccount)
-					if err := rlp.DecodeBytes(enc, data); err != nil {
-						if txExtra.MSuicide[address] == true {
-							statedb.Suicide(address)
-						}
-						log.Error("PostState Failed to decode state object", "addr", address, "err", err)
-						//statedb.CreateAccount(address)
-
+				for address, sa := range txExtra.PreState {
+					if txExtra.MSuicide[address] == true {
+						statedb.Suicide(address)
 						continue
 					}
-					temp := txExtra.PreState[address]
-					//log.Info("数据对比", "addr", address.Hex(), "执行数据", temp, "预估数据", data)
-					if data.Nonce != temp.Nonce {
-						log.Error("Account Nonce Error", "hash", txExtra.TxHash.Hex(),
-							"address", address,
-							"执行数据", temp.Nonce,
-							"预计数据", data.Nonce)
-						//return nil, nil, 0, fmt.Errorf("Account Nonce Error")
-					}
-
-					if data.Balance.Cmp(temp.Balance) != 0 {
-						log.Error("Account Balance Error", "hash", txExtra.TxHash.Hex(),
-							"address", address,
-							"执行数据", temp.Balance,
-							"预计数据", data.Balance)
-						//return nil, nil, 0, fmt.Errorf("Account Balance Error")
-					}
-					//log.Info("修改账户内容", "address", address.Hex(), "balance", data.Balance, "nonce", data.Nonce)
-					statedb.SetBalance(address, data.Balance)
-					statedb.SetNonce(address, data.Nonce)
+					//log.Info("preState", "address", address, "balance", sa.Balance, "Nonce", sa.Nonce)
+					statedb.SetBalance(address, sa.Balance)
+					statedb.SetNonce(address, sa.Nonce)
 				}
 				//log.Info("PostState结束", "root", statedb.IntermediateRoot(p.config.IsEIP158(blockNumber)).Hex())
-				for address, m := range txExtra.PostStorage {
-					enc := txExtra.PostState[address]
-					data := new(types.StateAccount)
-					if err := rlp.DecodeBytes(enc, data); err != nil {
-						log.Error("PostStorage Failed to decode state object", "addr", address, "err", err)
-						//statedb.CreateAccount(address)
+				for address, m := range txExtra.PreStorage {
+					if txExtra.PreState[address] == nil {
 						continue
 					}
 					for hash, c := range m {
-						temp := txExtra.PreStorage[address][hash]
-						if temp != c {
-							log.Error("执行交易Storage数据不一致", "hash", txExtra.TxHash.Hex(),
-								"address", address, "hash", hash,
-								"执行数据", temp.Hex(),
-								"预计数据", c.Hex())
-							//return nil, nil, 0, fmt.Errorf("执行交易账户数据不一致")
-						}
-						//log.Info("修改Storage", "addr", address.Hex(), "key", hash, "val", c)
-						statedb.SetState(address, hash, temp)
+						//log.Info("preStoreage", "address", address, "key", hash, "val", c)
+						statedb.SetState(address, hash, c)
 					}
 				}
-				for address, i := range txExtra.PostCode {
-					enc := txExtra.PostState[address]
-					data := new(types.StateAccount)
-					if err := rlp.DecodeBytes(enc, data); err != nil {
-						log.Error("PostCode Failed to decode state object", "addr", address, "err", err)
-						//statedb.CreateAccount(address)
-						continue
+				for address, code := range txExtra.PreCode {
+					if code != nil && txExtra.PreState[address] != nil {
+						//log.Info("PreCode", "address", address, "code", code)
+						statedb.SetCode(address, code)
 					}
-					//log.Info("修改code", "addr", address.Hex())
-					statedb.SetCode(address, i)
 				}
 
 				statedb.SetTxContext(transaction.Hash(), i)
@@ -362,8 +209,8 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 				log.Info("transaction 后", "hash", transaction.Hash().Hex())
 			}
 		}
-		log.Info("blockNumber", "blockNumber", blockNumber)
-		//usedGas = pUseGas
+		time3 := time.Now()
+		log.Info("File", "blockNumber", blockNumber, "总时间", time3.Sub(time1), "读文件", time2.Sub(time1), "执行", time3.Sub(time2))
 	}
 
 	// Fail if Shanghai not enabled and len(withdrawals) is non-zero.
@@ -373,12 +220,6 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	}
 	// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
 	p.engine.Finalize(p.bc, header, statedb, block.Transactions(), block.Uncles(), withdrawals)
-	//if blockNumber.Uint64() == 246225 {
-	//	root2 := statedb.IntermediateRoot_new(p.bc.chainConfig.IsEIP158(block.Number()))
-	//	log.Info("查看Trie更改", "block", blockNumber, "header.root", block.Header().Root.Hex(), "root", root2.Hex())
-	//}
-	//root2 := statedb.IntermediateRoot(p.bc.chainConfig.IsEIP158(block.Number()))
-	//log.Info("最终性比对", "block", blockNumber, "header.root", block.Header().Root.Hex(), "root", root2.Hex())
 	return receipts, allLogs, *usedGas, nil
 }
 
