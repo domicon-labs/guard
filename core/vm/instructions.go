@@ -862,7 +862,16 @@ func opDelegateCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext
 	// Get arguments from the memory.
 	args := scope.Memory.GetPtr(int64(inOffset.Uint64()), int64(inSize.Uint64()))
 
-	ret, returnGas, err := interpreter.evm.DelegateCall(scope.Contract, toAddr, args, gas)
+	var (
+		ret       []byte
+		returnGas uint64
+		err       error
+	)
+	if txExtra == nil {
+		ret, returnGas, err = interpreter.evm.DelegateCall(scope.Contract, toAddr, args, gas)
+	} else {
+		ret, returnGas, err = interpreter.evm.DelegateCall_new(txExtra, scope.Contract, toAddr, args, gas)
+	}
 	if err != nil {
 		temp.Clear()
 	} else {
