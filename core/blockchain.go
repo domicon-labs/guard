@@ -1734,20 +1734,20 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 		// If we have a followup block, run that against the current state to pre-cache
 		// transactions and probabilistically some of the account/storage trie nodes.
 		var followupInterrupt atomic.Bool
-		if !bc.cacheConfig.TrieCleanNoPrefetch {
-			if followup, err := it.peek(); followup != nil && err == nil {
-				throwaway, _ := state.New(parent.Root, bc.stateCache, bc.snaps)
-
-				go func(start time.Time, followup *types.Block, throwaway *state.StateDB) {
-					bc.prefetcher.Prefetch(followup, throwaway, bc.vmConfig, &followupInterrupt)
-
-					blockPrefetchExecuteTimer.Update(time.Since(start))
-					if followupInterrupt.Load() {
-						blockPrefetchInterruptMeter.Mark(1)
-					}
-				}(time.Now(), followup, throwaway)
-			}
-		}
+		//if !bc.cacheConfig.TrieCleanNoPrefetch {
+		//	if followup, err := it.peek(); followup != nil && err == nil {
+		//		throwaway, _ := state.New(parent.Root, bc.stateCache, bc.snaps)
+		//
+		//		go func(start time.Time, followup *types.Block, throwaway *state.StateDB) {
+		//			bc.prefetcher.Prefetch(followup, throwaway, bc.vmConfig, &followupInterrupt)
+		//
+		//			blockPrefetchExecuteTimer.Update(time.Since(start))
+		//			if followupInterrupt.Load() {
+		//				blockPrefetchInterruptMeter.Mark(1)
+		//			}
+		//		}(time.Now(), followup, throwaway)
+		//	}
+		//}
 
 		// Process block using the parent state as reference point
 		pstart := time.Now()
