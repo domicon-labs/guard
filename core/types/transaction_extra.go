@@ -94,6 +94,7 @@ func (t *TxExtra) Copy() *TxExtra {
 		PreCode:          make(map[common.Address][]byte),
 		PostCode:         make(map[common.Address][]byte),
 		Refund:           t.Refund,
+		MSuicide:         make(map[common.Address]bool),
 		logs:             make(map[common.Hash][]*Log),
 	}
 	for address, account := range t.PreState {
