@@ -402,7 +402,7 @@ func (t *TxExtra) SetNonce(address common.Address, nonce uint64) {
 	} else {
 		t.PreState[address] = &StateAccount{
 			Nonce:    nonce,
-			Balance:  nil,
+			Balance:  new(big.Int),
 			Root:     common.Hash{},
 			CodeHash: nil,
 		}
@@ -435,10 +435,8 @@ func (t *TxExtra) GetCodeSize(address common.Address) int {
 
 func (t *TxExtra) Transfer(sender, recipient common.Address, amount *big.Int) {
 	//log.Info("Transfer", "hash", t.TxHash, "sender", sender.Hex(), "recipient", recipient.Hex(), "amount", amount)
-	s := t.PreState[sender]
-	s.Balance = new(big.Int).Sub(s.Balance, amount)
-	r := t.PreState[recipient]
-	r.Balance = new(big.Int).Add(r.Balance, amount)
+	t.SubBalance(sender, amount)
+	t.AddBalance(recipient, amount)
 }
 
 func (t *TxExtra) GetState(address common.Address, key common.Hash) common.Hash {
@@ -466,17 +464,28 @@ func (t *TxExtra) GetBalance(address common.Address) *big.Int {
 }
 
 func (t *TxExtra) SubBalance(address common.Address, amout *big.Int) {
-	s := t.PreState[address]
-	if s != nil {
-		s.Balance = new(big.Int).Sub(s.Balance, amout)
+	if t.PreState[address] == nil {
+		t.PreState[address] = &StateAccount{
+			Nonce:    0,
+			Balance:  new(big.Int),
+			Root:     common.Hash{},
+			CodeHash: nil,
+		}
 	}
+	t.PreState[address].Balance = new(big.Int).Sub(t.PreState[address].Balance, amout)
+
 }
 
 func (t *TxExtra) AddBalance(address common.Address, amout *big.Int) {
-	s := t.PreState[address]
-	if s != nil {
-		s.Balance = new(big.Int).Add(s.Balance, amout)
+	if t.PreState[address] == nil {
+		t.PreState[address] = &StateAccount{
+			Nonce:    0,
+			Balance:  new(big.Int),
+			Root:     common.Hash{},
+			CodeHash: nil,
+		}
 	}
+	t.PreState[address].Balance = new(big.Int).Add(t.PreState[address].Balance, amout)
 }
 
 func (t *TxExtra) CanTransfer(address common.Address, amount *big.Int) bool {
