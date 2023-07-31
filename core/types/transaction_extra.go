@@ -397,7 +397,7 @@ func (t *TxExtra) SetRefund(gas uint64) {
 }
 
 func (t *TxExtra) SetNonce(address common.Address, nonce uint64) {
-	if t.PreState[address].Balance != nil {
+	if t.PreState[address] != nil {
 		t.PreState[address].Nonce = nonce
 	} else {
 		t.PreState[address] = &StateAccount{
@@ -424,6 +424,13 @@ func (t *TxExtra) GetCodeHash(address common.Address) common.Hash {
 func (t *TxExtra) SetCode(address common.Address, code []byte) {
 	t.PreState[address].CodeHash = crypto.Keccak256Hash(code).Bytes()
 	t.PreCode[address] = code
+}
+
+func (t *TxExtra) GetCodeSize(address common.Address) int {
+	if t.PreCode[address] != nil {
+		return len(t.PreCode[address])
+	}
+	return 0
 }
 
 func (t *TxExtra) Transfer(sender, recipient common.Address, amount *big.Int) {
